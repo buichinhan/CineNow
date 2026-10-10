@@ -1,19 +1,18 @@
-
 import React from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  Image,
   ImageBackground,
   StatusBar,
   useWindowDimensions,
+  TouchableOpacity,
 } from 'react-native';
 
 const THEATER_IMAGE =
   'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=1000&q=85';
 
-export default function SplashScreen() {
+export default function SplashScreen({ onStart }) {
   const { width, height } = useWindowDimensions();
 
   return (
@@ -42,6 +41,7 @@ export default function SplashScreen() {
         <Text style={styles.slogan}>
           Đặt vé nhanh – Trải nghiệm điện ảnh
         </Text>
+
         <Text style={styles.slogan}>
           trọn vẹn
         </Text>
@@ -67,13 +67,25 @@ export default function SplashScreen() {
         </ImageBackground>
       </View>
 
-      {/* LOADING */}
+      {/* BUTTON AND LOADING */}
       <View style={styles.loadingContainer}>
+        <TouchableOpacity
+          style={styles.startButton}
+          onPress={onStart}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.startButtonText}>
+            BẮT ĐẦU NGAY
+          </Text>
+        </TouchableOpacity>
+
         <View style={styles.progressTrack}>
           <View style={styles.progressFill} />
         </View>
 
-        <Text style={styles.loadingText}>Đang mở...</Text>
+        <Text style={styles.loadingText}>
+          Chào mừng bạn đến với CineNow
+        </Text>
       </View>
     </View>
   );
@@ -168,6 +180,21 @@ const styles = StyleSheet.create({
     width: '100%',
   },
 
+  startButton: {
+    backgroundColor: '#E51B23',
+    paddingHorizontal: 28,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginBottom: 20,
+  },
+
+  startButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+    letterSpacing: 1,
+  },
+
   progressTrack: {
     width: 90,
     height: 2,
@@ -184,6 +211,6 @@ const styles = StyleSheet.create({
 
   loadingText: {
     color: '#777777',
-    fontSize: 8,
+    fontSize: 10,
   },
 });
