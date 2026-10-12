@@ -1,21 +1,43 @@
+
 import React, { useEffect, useState } from 'react';
 import Splash from './splash';
 import Login from './login';
+import Register from './register';
 
 export default function App() {
-  const [showLogin, setShowLogin] = useState(false);
+  const [currentScreen, setCurrentScreen] = useState('splash');
 
   useEffect(() => {
+    if (currentScreen !== 'splash') {
+      return;
+    }
+
     const timer = setTimeout(() => {
-      setShowLogin(true);
+      setCurrentScreen('login');
     }, 5000);
 
     return () => clearTimeout(timer);
-  }, []);
+  }, [currentScreen]);
 
-  if (showLogin) {
-    return <Login />;
+  if (currentScreen === 'register') {
+    return (
+      <Register
+        onLogin={() => setCurrentScreen('login')}
+      />
+    );
   }
 
-  return <Splash onStart={() => setShowLogin(true)} />;
+  if (currentScreen === 'login') {
+    return (
+      <Login
+        onRegister={() => setCurrentScreen('register')}
+      />
+    );
+  }
+
+  return (
+    <Splash
+      onStart={() => setCurrentScreen('login')}
+    />
+  );
 }
