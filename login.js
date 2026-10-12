@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import {
   View,
@@ -12,14 +13,17 @@ import {
   Alert,
 } from 'react-native';
 
-export default function LoginScreen() {
+export default function LoginScreen({ onRegister }) {
   const [account, setAccount] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
   const handleLogin = () => {
     if (!account.trim() || !password.trim()) {
-      Alert.alert('Thông báo', 'Vui lòng nhập tài khoản và mật khẩu.');
+      Alert.alert(
+        'Thông báo',
+        'Vui lòng nhập tài khoản và mật khẩu.'
+      );
       return;
     }
 
@@ -57,7 +61,9 @@ export default function LoginScreen() {
 
         {/* TIÊU ĐỀ */}
         <View style={styles.headingContainer}>
-          <Text style={styles.title}>Chào mừng trở lại!</Text>
+          <Text style={styles.title}>
+            Chào mừng trở lại!
+          </Text>
 
           <Text style={styles.subtitle}>
             Đăng nhập để tiếp tục hành trình điện ảnh của bạn.
@@ -66,7 +72,9 @@ export default function LoginScreen() {
 
         {/* FORM ĐĂNG NHẬP */}
         <View style={styles.form}>
-          <Text style={styles.label}>Email hoặc số điện thoại</Text>
+          <Text style={styles.label}>
+            Email hoặc số điện thoại
+          </Text>
 
           <TextInput
             style={styles.input}
@@ -77,6 +85,7 @@ export default function LoginScreen() {
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
+            returnKeyType="next"
           />
 
           <Text style={styles.label}>Mật khẩu</Text>
@@ -90,11 +99,13 @@ export default function LoginScreen() {
               onChangeText={setPassword}
               secureTextEntry={!showPassword}
               autoCapitalize="none"
+              returnKeyType="done"
             />
 
             <TouchableOpacity
               onPress={() => setShowPassword(!showPassword)}
               style={styles.showPasswordButton}
+              activeOpacity={0.7}
             >
               <Text style={styles.showPasswordText}>
                 {showPassword ? 'Ẩn' : 'Hiện'}
@@ -111,8 +122,11 @@ export default function LoginScreen() {
                 'Chức năng này sẽ được bổ sung sau.'
               )
             }
+            activeOpacity={0.7}
           >
-            <Text style={styles.forgotText}>Quên mật khẩu?</Text>
+            <Text style={styles.forgotText}>
+              Quên mật khẩu?
+            </Text>
           </TouchableOpacity>
 
           {/* NÚT ĐĂNG NHẬP */}
@@ -121,7 +135,9 @@ export default function LoginScreen() {
             onPress={handleLogin}
             activeOpacity={0.8}
           >
-            <Text style={styles.loginButtonText}>ĐĂNG NHẬP</Text>
+            <Text style={styles.loginButtonText}>
+              ĐĂNG NHẬP
+            </Text>
           </TouchableOpacity>
 
           {/* ĐĂNG KÝ */}
@@ -131,14 +147,12 @@ export default function LoginScreen() {
             </Text>
 
             <TouchableOpacity
-              onPress={() =>
-                Alert.alert(
-                  'Đăng ký',
-                  'Chúng ta sẽ xây dựng màn hình đăng ký tiếp theo.'
-                )
-              }
+              onPress={onRegister}
+              activeOpacity={0.7}
             >
-              <Text style={styles.registerLink}>Đăng ký ngay</Text>
+              <Text style={styles.registerLink}>
+                Đăng ký ngay
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
