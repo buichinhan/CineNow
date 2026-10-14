@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import {
   View,
@@ -9,20 +8,28 @@ import {
   StatusBar,
   ScrollView,
   Alert,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 
-export default function RegisterScreen({ onLogin }) {
+const API_URL = 'http://10.0.2.2:3000/api';
+
+export default function RegisterScreen({ onLogin, onRegisterSuccess }) {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleRegister = () => {
+  const handleRegister = async () => {
     if (
       !fullName.trim() ||
       !email.trim() ||
+      !phone.trim() ||
       !password ||
       !confirmPassword
     ) {
@@ -35,24 +42,87 @@ export default function RegisterScreen({ onLogin }) {
       return;
     }
 
-    if (password.length < 6) {
-      Alert.alert('Thông báo', 'Mật khẩu cần có ít nhất 6 ký tự.');
+    if (!/^\d{10,11}$/.test(phone.trim())) {
+      Alert.alert(
+        'Thông báo',
+        'Số điện thoại phải gồm 10 hoặc 11 chữ số.',
+      );
+      return;
+    }
+
+    if (password.length < 8) {
+      Alert.alert(
+        'Thông báo',
+        'Mật khẩu phải có ít nhất 8 ký tự.',
+      );
       return;
     }
 
     if (password !== confirmPassword) {
-      Alert.alert('Thông báo', 'Mật khẩu xác nhận không khớp.');
+      Alert.alert(
+        'Thông báo',
+        'Mật khẩu xác nhận không khớp.',
+      );
       return;
     }
 
-    Alert.alert(
-      'Thông tin hợp lệ',
-      'Giao diện đăng ký đã hoạt động. Chức năng tạo tài khoản sẽ được kết nối sau.'
-    );
+    try {
+      setLoading(true);
+
+      const response = await fetch(`${API_URL}/auth/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          fullName: fullName.trim(),
+          email: email.trim().toLowerCase(),
+          phone: phone.trim(),
+          password,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        Alert.alert(
+          'Đăng ký chưa thành công',
+          data.message || 'Vui lòng thử lại.',
+        );
+        return;
+      }
+
+      Alert.alert(
+        'Thành công',
+        'Tạo tài khoản CineNow thành công! Bạn có thể đăng nhập.',
+        [
+          {
+            text: 'Đăng nhập',
+            onPress: () => {
+              if (onRegisterSuccess) {
+                onRegisterSuccess();
+              } else if (onLogin) {
+                onLogin();
+              }
+            },
+          },
+        ],
+      );
+    } catch (error) {
+      Alert.alert(
+        'Không kết nối được máy chủ',
+        'Hãy kiểm tra backend, MongoDB và địa chỉ API.',
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <StatusBar barStyle="light-content" backgroundColor="#0B0B0B" />
 
       <ScrollView
@@ -60,27 +130,21 @@ export default function RegisterScreen({ onLogin }) {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* Logo CineNow */}
         <View style={styles.logoRow}>
           <View style={styles.logoIcon}>
-            <Text style={styles.playIcon}>▷</Text>
+            <Text style={styles.playIcon}>▶</Text>
           </View>
-
           <Text style={styles.logoText}>
             Cine<Text style={styles.logoRed}>Now</Text>
           </Text>
         </View>
 
-        {/* Tiêu đề */}
         <Text style={styles.title}>Tạo tài khoản</Text>
-
         <Text style={styles.subtitle}>
-          Tham gia CineNow để đặt vé xem phim dễ dàng
+          Đăng ký một lần, đặt vé trong vài chạm.
         </Text>
 
-        {/* Họ tên */}
         <Text style={styles.label}>Họ và tên</Text>
-
         <TextInput
           style={styles.input}
           placeholder="Nhập họ và tên"
@@ -91,9 +155,7 @@ export default function RegisterScreen({ onLogin }) {
           returnKeyType="next"
         />
 
-        {/* Email */}
         <Text style={styles.label}>Email</Text>
-
         <TextInput
           style={styles.input}
           placeholder="example@email.com"
@@ -106,13 +168,23 @@ export default function RegisterScreen({ onLogin }) {
           returnKeyType="next"
         />
 
-        {/* Mật khẩu */}
-        <Text style={styles.label}>Mật khẩu</Text>
+        <Text style={styles.label}>Số điện thoại</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Nhập số điện thoại"
+          placeholderTextColor="#777777"
+          value={phone}
+          onChangeText={setPhone}
+          keyboardType="phone-pad"
+          maxLength={11}
+          returnKeyType="next"
+        />
 
+        <Text style={styles.label}>Mật khẩu</Text>
         <View style={styles.passwordContainer}>
           <TextInput
             style={styles.passwordInput}
-            placeholder="Ít nhất 6 ký tự"
+            placeholder="Ít nhất 8 ký tự"
             placeholderTextColor="#777777"
             value={password}
             onChangeText={setPassword}
@@ -120,7 +192,6 @@ export default function RegisterScreen({ onLogin }) {
             autoCapitalize="none"
             returnKeyType="next"
           />
-
           <TouchableOpacity
             onPress={() => setShowPassword(!showPassword)}
             activeOpacity={0.7}
@@ -131,9 +202,13 @@ export default function RegisterScreen({ onLogin }) {
           </TouchableOpacity>
         </View>
 
-        {/* Xác nhận mật khẩu */}
-        <Text style={styles.label}>Xác nhận mật khẩu</Text>
+        <Text style={styles.passwordHint}>
+          {password.length >= 8
+            ? '✓ Độ dài mật khẩu hợp lệ'
+            : 'Mật khẩu cần ít nhất 8 ký tự'}
+        </Text>
 
+        <Text style={styles.label}>Xác nhận mật khẩu</Text>
         <View style={styles.passwordContainer}>
           <TextInput
             style={styles.passwordInput}
@@ -144,8 +219,8 @@ export default function RegisterScreen({ onLogin }) {
             secureTextEntry={!showConfirmPassword}
             autoCapitalize="none"
             returnKeyType="done"
+            onSubmitEditing={handleRegister}
           />
-
           <TouchableOpacity
             onPress={() =>
               setShowConfirmPassword(!showConfirmPassword)
@@ -158,19 +233,25 @@ export default function RegisterScreen({ onLogin }) {
           </TouchableOpacity>
         </View>
 
-        {/* Nút đăng ký */}
         <TouchableOpacity
-          style={styles.registerButton}
+          style={[styles.registerButton, loading && styles.disabledButton]}
           onPress={handleRegister}
+          disabled={loading}
           activeOpacity={0.8}
         >
-          <Text style={styles.registerButtonText}>ĐĂNG KÝ</Text>
+          {loading ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.registerButtonText}>ĐĂNG KÝ</Text>
+          )}
         </TouchableOpacity>
 
-        {/* Quay lại đăng nhập */}
+        <Text style={styles.terms}>
+          Bằng việc đăng ký, bạn đồng ý với các điều khoản sử dụng CineNow.
+        </Text>
+
         <View style={styles.loginRow}>
           <Text style={styles.loginText}>Đã có tài khoản? </Text>
-
           <TouchableOpacity onPress={onLogin} activeOpacity={0.7}>
             <Text style={styles.loginLink}>Đăng nhập</Text>
           </TouchableOpacity>
@@ -180,7 +261,7 @@ export default function RegisterScreen({ onLogin }) {
           CineNow · Trải nghiệm điện ảnh trọn vẹn
         </Text>
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -192,79 +273,76 @@ const styles = StyleSheet.create({
   content: {
     flexGrow: 1,
     paddingHorizontal: 25,
-    paddingTop: 55,
+    paddingTop: 45,
     paddingBottom: 30,
   },
   logoRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 32,
+    marginBottom: 28,
   },
   logoIcon: {
-    width: 34,
-    height: 34,
+    width: 36,
+    height: 36,
     borderRadius: 9,
-    backgroundColor: '#E51B23',
+    backgroundColor: '#E50914',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 7,
+    marginRight: 8,
   },
   playIcon: {
     color: '#FFFFFF',
-    fontSize: 24,
+    fontSize: 19,
     fontWeight: 'bold',
-    marginLeft: 2,
-    marginTop: -2,
   },
   logoText: {
     color: '#FFFFFF',
-    fontSize: 25,
+    fontSize: 27,
     fontWeight: '800',
-    letterSpacing: -0.5,
   },
   logoRed: {
-    color: '#E51B23',
+    color: '#E50914',
   },
   title: {
     color: '#FFFFFF',
     fontSize: 27,
     fontWeight: '800',
-    marginBottom: 9,
+    marginBottom: 8,
   },
   subtitle: {
     color: '#999999',
     fontSize: 13,
     lineHeight: 20,
-    marginBottom: 27,
+    marginBottom: 20,
   },
   label: {
     color: '#EEEEEE',
     fontSize: 13,
     fontWeight: '600',
-    marginBottom: 9,
+    marginBottom: 8,
   },
   input: {
-    height: 49,
+    height: 48,
     borderWidth: 1,
     borderColor: '#333333',
-    borderRadius: 9,
+    borderRadius: 10,
     backgroundColor: '#171717',
     paddingHorizontal: 14,
     color: '#FFFFFF',
     fontSize: 14,
-    marginBottom: 19,
+    marginBottom: 15,
   },
   passwordContainer: {
-    height: 49,
+    height: 48,
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#333333',
-    borderRadius: 9,
+    borderRadius: 10,
     backgroundColor: '#171717',
     paddingHorizontal: 14,
-    marginBottom: 19,
+    marginBottom: 8,
   },
   passwordInput: {
     flex: 1,
@@ -273,18 +351,27 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
   },
   showPassword: {
-    color: '#E51B23',
+    color: '#E50914',
     fontSize: 11,
     fontWeight: '800',
     paddingLeft: 10,
+    paddingVertical: 10,
+  },
+  passwordHint: {
+    color: '#999999',
+    fontSize: 11,
+    marginBottom: 15,
   },
   registerButton: {
     height: 50,
-    backgroundColor: '#E51B23',
-    borderRadius: 9,
+    backgroundColor: '#E50914',
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 8,
+    marginTop: 12,
+  },
+  disabledButton: {
+    opacity: 0.7,
   },
   registerButtonText: {
     color: '#FFFFFF',
@@ -292,18 +379,25 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 1,
   },
+  terms: {
+    color: '#777777',
+    fontSize: 11,
+    lineHeight: 17,
+    textAlign: 'center',
+    marginTop: 14,
+  },
   loginRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 24,
+    marginTop: 23,
   },
   loginText: {
     color: '#999999',
     fontSize: 13,
   },
   loginLink: {
-    color: '#E51B23',
+    color: '#E50914',
     fontSize: 13,
     fontWeight: '700',
   },
@@ -311,6 +405,6 @@ const styles = StyleSheet.create({
     color: '#555555',
     fontSize: 10,
     textAlign: 'center',
-    marginTop: 30,
+    marginTop: 28,
   },
 });
