@@ -13,9 +13,9 @@ import {
   Platform,
 } from 'react-native';
 
-const API_URL = 'http://10.0.2.2:3000/api';
+const API_URL = 'https://cinenow-backend-9on6.onrender.com/api';
 
-export default function RegisterScreen({ onLogin, onRegisterSuccess }) {
+export default function Register({ onLogin, onRegisterSuccess }) {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -111,7 +111,7 @@ export default function RegisterScreen({ onLogin, onRegisterSuccess }) {
     } catch (error) {
       Alert.alert(
         'Không kết nối được máy chủ',
-        'Hãy kiểm tra backend, MongoDB và địa chỉ API.',
+        'Vui lòng kiểm tra Internet hoặc thử lại sau.',
       );
     } finally {
       setLoading(false);
@@ -134,17 +134,20 @@ export default function RegisterScreen({ onLogin, onRegisterSuccess }) {
           <View style={styles.logoIcon}>
             <Text style={styles.playIcon}>▶</Text>
           </View>
+
           <Text style={styles.logoText}>
             Cine<Text style={styles.logoRed}>Now</Text>
           </Text>
         </View>
 
         <Text style={styles.title}>Tạo tài khoản</Text>
+
         <Text style={styles.subtitle}>
           Đăng ký một lần, đặt vé trong vài chạm.
         </Text>
 
         <Text style={styles.label}>Họ và tên</Text>
+
         <TextInput
           style={styles.input}
           placeholder="Nhập họ và tên"
@@ -156,6 +159,7 @@ export default function RegisterScreen({ onLogin, onRegisterSuccess }) {
         />
 
         <Text style={styles.label}>Email</Text>
+
         <TextInput
           style={styles.input}
           placeholder="example@email.com"
@@ -169,6 +173,7 @@ export default function RegisterScreen({ onLogin, onRegisterSuccess }) {
         />
 
         <Text style={styles.label}>Số điện thoại</Text>
+
         <TextInput
           style={styles.input}
           placeholder="Nhập số điện thoại"
@@ -181,6 +186,7 @@ export default function RegisterScreen({ onLogin, onRegisterSuccess }) {
         />
 
         <Text style={styles.label}>Mật khẩu</Text>
+
         <View style={styles.passwordContainer}>
           <TextInput
             style={styles.passwordInput}
@@ -192,6 +198,7 @@ export default function RegisterScreen({ onLogin, onRegisterSuccess }) {
             autoCapitalize="none"
             returnKeyType="next"
           />
+
           <TouchableOpacity
             onPress={() => setShowPassword(!showPassword)}
             activeOpacity={0.7}
@@ -209,6 +216,7 @@ export default function RegisterScreen({ onLogin, onRegisterSuccess }) {
         </Text>
 
         <Text style={styles.label}>Xác nhận mật khẩu</Text>
+
         <View style={styles.passwordContainer}>
           <TextInput
             style={styles.passwordInput}
@@ -221,6 +229,7 @@ export default function RegisterScreen({ onLogin, onRegisterSuccess }) {
             returnKeyType="done"
             onSubmitEditing={handleRegister}
           />
+
           <TouchableOpacity
             onPress={() =>
               setShowConfirmPassword(!showConfirmPassword)
@@ -234,7 +243,10 @@ export default function RegisterScreen({ onLogin, onRegisterSuccess }) {
         </View>
 
         <TouchableOpacity
-          style={[styles.registerButton, loading && styles.disabledButton]}
+          style={[
+            styles.registerButton,
+            loading && styles.disabledButton,
+          ]}
           onPress={handleRegister}
           disabled={loading}
           activeOpacity={0.8}
@@ -252,6 +264,7 @@ export default function RegisterScreen({ onLogin, onRegisterSuccess }) {
 
         <View style={styles.loginRow}>
           <Text style={styles.loginText}>Đã có tài khoản? </Text>
+
           <TouchableOpacity onPress={onLogin} activeOpacity={0.7}>
             <Text style={styles.loginLink}>Đăng nhập</Text>
           </TouchableOpacity>
@@ -270,18 +283,21 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0B0B0B',
   },
+
   content: {
     flexGrow: 1,
     paddingHorizontal: 25,
     paddingTop: 45,
     paddingBottom: 30,
   },
+
   logoRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 28,
   },
+
   logoIcon: {
     width: 36,
     height: 36,
@@ -291,37 +307,44 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 8,
   },
+
   playIcon: {
     color: '#FFFFFF',
     fontSize: 19,
     fontWeight: 'bold',
   },
+
   logoText: {
     color: '#FFFFFF',
     fontSize: 27,
     fontWeight: '800',
   },
+
   logoRed: {
     color: '#E50914',
   },
+
   title: {
     color: '#FFFFFF',
     fontSize: 27,
     fontWeight: '800',
     marginBottom: 8,
   },
+
   subtitle: {
     color: '#999999',
     fontSize: 13,
     lineHeight: 20,
     marginBottom: 20,
   },
+
   label: {
     color: '#EEEEEE',
     fontSize: 13,
     fontWeight: '600',
     marginBottom: 8,
   },
+
   input: {
     height: 48,
     borderWidth: 1,
@@ -333,6 +356,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 15,
   },
+
   passwordContainer: {
     height: 48,
     flexDirection: 'row',
@@ -344,12 +368,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     marginBottom: 8,
   },
+
   passwordInput: {
     flex: 1,
     color: '#FFFFFF',
     fontSize: 14,
     paddingVertical: 0,
   },
+
   showPassword: {
     color: '#E50914',
     fontSize: 11,
@@ -357,11 +383,13 @@ const styles = StyleSheet.create({
     paddingLeft: 10,
     paddingVertical: 10,
   },
+
   passwordHint: {
     color: '#999999',
     fontSize: 11,
     marginBottom: 15,
   },
+
   registerButton: {
     height: 50,
     backgroundColor: '#E50914',
@@ -370,15 +398,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 12,
   },
+
   disabledButton: {
     opacity: 0.7,
   },
+
   registerButtonText: {
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '800',
     letterSpacing: 1,
   },
+
   terms: {
     color: '#777777',
     fontSize: 11,
@@ -386,21 +417,25 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 14,
   },
+
   loginRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 23,
   },
+
   loginText: {
     color: '#999999',
     fontSize: 13,
   },
+
   loginLink: {
     color: '#E50914',
     fontSize: 13,
     fontWeight: '700',
   },
+
   footer: {
     color: '#555555',
     fontSize: 10,

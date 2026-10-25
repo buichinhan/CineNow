@@ -15,6 +15,7 @@ import Register from './register';
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('splash');
   const [user, setUser] = useState(null);
+  const [token, setToken] = useState(null);
 
   useEffect(() => {
     if (currentScreen !== 'splash') {
@@ -28,11 +29,22 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [currentScreen]);
 
+  // Nhận toàn bộ dữ liệu phản hồi từ API đăng nhập
   const handleLoginSuccess = (data) => {
+    if (!data?.user || !data?.token) {
+      Alert.alert(
+        'Đăng nhập thất bại',
+        'Dữ liệu người dùng hoặc token không hợp lệ.',
+      );
+      return;
+    }
+
     setUser(data.user);
+    setToken(data.token);
     setCurrentScreen('home');
   };
 
+  // Đăng xuất
   const handleLogout = () => {
     Alert.alert(
       'Đăng xuất',
@@ -47,6 +59,7 @@ export default function App() {
           style: 'destructive',
           onPress: () => {
             setUser(null);
+            setToken(null);
             setCurrentScreen('login');
           },
         },
@@ -54,6 +67,7 @@ export default function App() {
     );
   };
 
+  // Màn hình đăng ký
   if (currentScreen === 'register') {
     return (
       <Register
@@ -63,6 +77,7 @@ export default function App() {
     );
   }
 
+  // Màn hình đăng nhập
   if (currentScreen === 'login') {
     return (
       <Login
@@ -72,6 +87,7 @@ export default function App() {
     );
   }
 
+  // Màn hình chính sau đăng nhập
   if (currentScreen === 'home') {
     return (
       <View style={styles.homeContainer}>
@@ -107,9 +123,11 @@ export default function App() {
 
           <View style={styles.featureCard}>
             <Text style={styles.featureIcon}>🎬</Text>
+
             <Text style={styles.featureTitle}>
               Khám phá phim
             </Text>
+
             <Text style={styles.featureDescription}>
               Các tính năng xem phim và đặt vé sẽ được phát triển ở bước tiếp theo.
             </Text>
@@ -133,6 +151,7 @@ export default function App() {
     );
   }
 
+  // Màn hình chào mừng
   return (
     <Splash
       onStart={() => setCurrentScreen('login')}
@@ -148,11 +167,13 @@ const styles = StyleSheet.create({
     paddingTop: 65,
     paddingBottom: 25,
   },
+
   logoContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
+
   logoIcon: {
     width: 43,
     height: 43,
@@ -162,41 +183,49 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 10,
   },
+
   playIcon: {
     color: '#FFFFFF',
     fontSize: 21,
     fontWeight: 'bold',
   },
+
   logoText: {
     color: '#FFFFFF',
     fontSize: 30,
     fontWeight: 'bold',
   },
+
   logoRed: {
     color: '#E50914',
   },
+
   welcomeContainer: {
     flex: 1,
     justifyContent: 'center',
   },
+
   welcomeTitle: {
     color: '#FFFFFF',
     fontSize: 26,
     fontWeight: 'bold',
     marginBottom: 14,
   },
+
   welcomeSubtitle: {
     color: '#E50914',
     fontSize: 19,
     fontWeight: '600',
     marginBottom: 16,
   },
+
   description: {
     color: '#A5A5A5',
     fontSize: 14,
     lineHeight: 23,
     marginBottom: 30,
   },
+
   featureCard: {
     backgroundColor: '#171717',
     borderWidth: 1,
@@ -205,21 +234,25 @@ const styles = StyleSheet.create({
     padding: 22,
     marginBottom: 28,
   },
+
   featureIcon: {
     fontSize: 32,
     marginBottom: 12,
   },
+
   featureTitle: {
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 8,
   },
+
   featureDescription: {
     color: '#A5A5A5',
     fontSize: 13,
     lineHeight: 21,
   },
+
   logoutButton: {
     height: 52,
     backgroundColor: '#E50914',
@@ -227,12 +260,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+
   logoutButtonText: {
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: 'bold',
     letterSpacing: 1,
   },
+
   footer: {
     color: '#555555',
     fontSize: 11,
