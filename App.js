@@ -13,15 +13,12 @@ import {
 import Splash from './splash';
 import Login from './login';
 import Register from './register';
-import VoucherScreen from './screens/VoucherScreen';
-import BookingCheckoutDemoScreen from './screens/BookingCheckoutDemoScreen';
+import MovieCatalogScreen from './screens/MovieCatalogScreen';
 
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState('splash'); // 'splash' | 'login' | 'register' | 'main'
-  const [activeTab, setActiveTab] = useState('home'); // 'home' | 'vouchers' | 'checkout' | 'profile'
+  const [currentScreen, setCurrentScreen] = useState('splash'); // 'splash' | 'login' | 'register' | 'home'
+  const [activeTab, setActiveTab] = useState('home'); // 'home' | 'movies' | 'profile'
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(null);
-  const [selectedVoucherForCheckout, setSelectedVoucherForCheckout] = useState(null);
 
   useEffect(() => {
     if (currentScreen !== 'splash') {
@@ -35,13 +32,22 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [currentScreen]);
 
+  // Nhận dữ liệu phản hồi từ API đăng nhập
   const handleLoginSuccess = (data) => {
+    if (!data?.user || !data?.token) {
+      Alert.alert(
+        'Đăng nhập thất bại',
+        'Dữ liệu người dùng hoặc token không hợp lệ.',
+      );
+      return;
+    }
+
     setUser(data.user);
-    setToken(data.token);
-    setCurrentScreen('main');
+    setCurrentScreen('home');
     setActiveTab('home');
   };
 
+  // Đăng xuất
   const handleLogout = () => {
     Alert.alert(
       'Đăng xuất',
@@ -56,8 +62,6 @@ export default function App() {
           style: 'destructive',
           onPress: () => {
             setUser(null);
-            setToken(null);
-            setSelectedVoucherForCheckout(null);
             setCurrentScreen('login');
           },
         },
@@ -65,12 +69,7 @@ export default function App() {
     );
   };
 
-  // Chuyển từ tab Voucher sang màn hình Checkout để dùng voucher
-  const handleUseVoucherAtCheckout = (voucher) => {
-    setSelectedVoucherForCheckout(voucher);
-    setActiveTab('checkout');
-  };
-
+  // Màn hình đăng ký
   if (currentScreen === 'register') {
     return (
       <Register
@@ -80,6 +79,7 @@ export default function App() {
     );
   }
 
+  // Màn hình đăng nhập
   if (currentScreen === 'login') {
     return (
       <Login
@@ -89,277 +89,225 @@ export default function App() {
     );
   }
 
-  if (currentScreen === 'splash') {
-    return <Splash onStart={() => setCurrentScreen('login')} />;
-  }
+  // Màn hình ứng dụng chính sau khi đăng nhập thành công
+  if (currentScreen === 'home') {
+    return (
+      <SafeAreaView style={styles.mainContainer}>
+        <StatusBar barStyle="light-content" backgroundColor="#0B0B0B" />
 
-  // Giao diện chính sau khi đăng nhập thành công
-  return (
-    <SafeAreaView style={styles.mainContainer}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B0B0B" />
+        {/* 1. TOP HEADER CINENOW */}
+        <View style={styles.topHeader}>
+          <TouchableOpacity
+            style={styles.logoRow}
+            activeOpacity={0.8}
+            onPress={() => setActiveTab('home')}
+          >
+            <View style={styles.logoIcon}>
+              <Text style={styles.playIcon}>▶</Text>
+            </View>
+            <Text style={styles.logoText}>
+              Cine<Text style={styles.logoRed}>Now</Text>
+            </Text>
+          </TouchableOpacity>
 
-      {/* TOP HEADER */}
-      <View style={styles.topHeader}>
-        <View style={styles.logoRow}>
-          <View style={styles.logoIcon}>
-            <Text style={styles.playIcon}>▶</Text>
-          </View>
-          <Text style={styles.logoText}>
-            Cine<Text style={styles.logoRed}>Now</Text>
-          </Text>
+          <TouchableOpacity
+            style={styles.headerUserBadge}
+            onPress={() => setActiveTab('profile')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.headerUserIcon}>👤</Text>
+            <Text style={styles.headerUserName} numberOfLines={1}>
+              {user?.fullName?.split(' ')?.pop() || 'User'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
-        <TouchableOpacity
-          style={styles.headerUserBadge}
-          onPress={() => setActiveTab('profile')}
-        >
-          <Text style={styles.headerUserIcon}>👤</Text>
-          <Text style={styles.headerUserName} numberOfLines={1}>
-            {user?.fullName?.split(' ')?.pop() || 'User'}
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* TAB CONTENT */}
-      <View style={styles.contentArea}>
-        {activeTab === 'home' && (
-          <ScrollView
-            style={styles.homeScroll}
-            contentContainerStyle={styles.homeScrollContent}
-            showsVerticalScrollIndicator={false}
-          >
-            {/* Chào mừng */}
-            <View style={styles.welcomeBanner}>
-              <Text style={styles.welcomeGreeting}>Xin chào,</Text>
-              <Text style={styles.welcomeName}>{user?.fullName || 'bạn'}! 👋</Text>
-              <Text style={styles.welcomeSub}>
-                Sẵn sàng cho những thước phim điện ảnh đỉnh cao hôm nay chưa?
-              </Text>
-            </View>
-
-            {/* Banner Ưu Đãi Nổi Bật */}
-            <TouchableOpacity
-              style={styles.promoBannerCard}
-              activeOpacity={0.85}
-              onPress={() => setActiveTab('vouchers')}
+        {/* 2. NỘI DUNG TỪNG TAB */}
+        <View style={styles.contentArea}>
+          {/* TAB 1: TRANG CHỦ */}
+          {activeTab === 'home' && (
+            <ScrollView
+              style={styles.homeScroll}
+              contentContainerStyle={styles.homeScrollContent}
+              showsVerticalScrollIndicator={false}
             >
-              <View style={styles.promoBannerTag}>
-                <Text style={styles.promoBannerTagText}>HOT DEALS</Text>
-              </View>
-              <Text style={styles.promoBannerTitle}>
-                🎁 Ưu đãi độc quyền CineNow
-              </Text>
-              <Text style={styles.promoBannerDesc}>
-                Nhận ngay voucher giảm đến 50.000đ và tặng bắp nước miễn phí khi đặt vé.
-              </Text>
-              <View style={styles.promoBannerBtn}>
-                <Text style={styles.promoBannerBtnText}>Khám phá kho Voucher ›</Text>
-              </View>
-            </TouchableOpacity>
-
-            {/* Phím tắt nhanh các phân hệ */}
-            <Text style={styles.quickSectionTitle}>Khám phá các phân hệ</Text>
-            <View style={styles.quickGrid}>
-              <TouchableOpacity
-                style={styles.quickCard}
-                activeOpacity={0.8}
-                onPress={() => setActiveTab('vouchers')}
-              >
-                <Text style={styles.quickCardIcon}>🎟️</Text>
-                <Text style={styles.quickCardTitle}>Kho Voucher</Text>
-                <Text style={styles.quickCardDesc}>
-                  Săn mã & quản lý ví ưu đãi
+              {/* Lời chào */}
+              <View style={styles.welcomeBanner}>
+                <Text style={styles.welcomeGreeting}>Xin chào,</Text>
+                <Text style={styles.welcomeName}>{user?.fullName || 'bạn'}! 👋</Text>
+                <Text style={styles.welcomeSub}>
+                  Sẵn sàng khám phá những siêu phẩm điện ảnh đỉnh cao hôm nay chưa?
                 </Text>
-              </TouchableOpacity>
+              </View>
 
+              {/* Banner Nổi Bật Dẫn Vào Kho Phim */}
               <TouchableOpacity
-                style={styles.quickCard}
-                activeOpacity={0.8}
-                onPress={() => setActiveTab('checkout')}
+                style={styles.promoBannerCard}
+                activeOpacity={0.85}
+                onPress={() => setActiveTab('movies')}
               >
-                <Text style={styles.quickCardIcon}>💳</Text>
-                <Text style={styles.quickCardTitle}>Thử Áp Mã</Text>
-                <Text style={styles.quickCardDesc}>
-                  Giả lập đặt vé & trừ tiền live
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Thông tin Hạng Thành Viên */}
-            <View style={styles.membershipCard}>
-              <View style={styles.memberHeader}>
-                <View>
-                  <Text style={styles.memberTier}>THÀNH VIÊN BẠC (SILVER)</Text>
-                  <Text style={styles.memberId}>ID: {user?.id?.slice(-8)?.toUpperCase() || 'CN-2026'}</Text>
+                <View style={styles.promoBannerTag}>
+                  <Text style={styles.promoBannerTagText}>HOT MOVIES</Text>
                 </View>
-                <Text style={styles.memberBadge}>⭐ 120 Điểm</Text>
+                <Text style={styles.promoBannerTitle}>
+                  🎬 Khám phá phim đang chiếu & sắp chiếu
+                </Text>
+                <Text style={styles.promoBannerDesc}>
+                  Tìm kiếm thông minh theo tên, diễn viên, đạo diễn. Lọc chuẩn 2D, 3D, IMAX và đặt vé nhanh trong tích tắc.
+                </Text>
+                <View style={styles.promoBannerBtn}>
+                  <Text style={styles.promoBannerBtnText}>Duyệt danh mục phim ngay ›</Text>
+                </View>
+              </TouchableOpacity>
+
+              {/* Lối tắt nhanh */}
+              <Text style={styles.quickSectionTitle}>Lối tắt tính năng</Text>
+              <View style={styles.quickGrid}>
+                <TouchableOpacity
+                  style={styles.quickCard}
+                  activeOpacity={0.8}
+                  onPress={() => setActiveTab('movies')}
+                >
+                  <Text style={styles.quickCardIcon}>🔍</Text>
+                  <Text style={styles.quickCardTitle}>Tìm Kiếm Phim</Text>
+                  <Text style={styles.quickCardDesc}>
+                    Bộ lọc thể loại, định dạng & độ tuổi
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.quickCard}
+                  activeOpacity={0.8}
+                  onPress={() => setActiveTab('profile')}
+                >
+                  <Text style={styles.quickCardIcon}>⭐</Text>
+                  <Text style={styles.quickCardTitle}>Hạng Hội Viên</Text>
+                  <Text style={styles.quickCardDesc}>
+                    Tích điểm đổi vé xem phim & quà tặng
+                  </Text>
+                </TouchableOpacity>
               </View>
-              <View style={styles.memberProgressBg}>
-                <View style={styles.memberProgressBar} />
-              </View>
-              <Text style={styles.memberProgressHint}>
-                Tích thêm 80 điểm để nâng hạng Thành Viên Vàng (Gold)
-              </Text>
-            </View>
-          </ScrollView>
-        )}
 
-        {activeTab === 'vouchers' && (
-          <VoucherScreen
-            user={user}
-            token={token}
-            onNavigateToCheckout={handleUseVoucherAtCheckout}
-          />
-        )}
-
-        {activeTab === 'checkout' && (
-          <BookingCheckoutDemoScreen
-            token={token}
-            initialVoucher={selectedVoucherForCheckout}
-            onNavigateToVoucherList={() => setActiveTab('vouchers')}
-          />
-        )}
-
-        {activeTab === 'profile' && (
-          <ScrollView style={styles.profileContainer} contentContainerStyle={styles.profileContent}>
-            <View style={styles.avatarContainer}>
-              <View style={styles.avatarCircle}>
-                <Text style={styles.avatarInitial}>
-                  {user?.fullName?.charAt(0)?.toUpperCase() || 'U'}
+              {/* Thẻ Hội Viên */}
+              <View style={styles.membershipCard}>
+                <View style={styles.memberHeader}>
+                  <View>
+                    <Text style={styles.memberTier}>THÀNH VIÊN BẠC (SILVER)</Text>
+                    <Text style={styles.memberId}>
+                      ID: {user?.id?.slice(-8)?.toUpperCase() || 'CN-2026'}
+                    </Text>
+                  </View>
+                  <Text style={styles.memberBadge}>⭐ 120 Điểm</Text>
+                </View>
+                <View style={styles.memberProgressBg}>
+                  <View style={styles.memberProgressBar} />
+                </View>
+                <Text style={styles.memberProgressHint}>
+                  Tích thêm 80 điểm để nâng hạng Thành Viên Vàng (Gold)
                 </Text>
               </View>
-              <Text style={styles.profileName}>{user?.fullName}</Text>
-              <Text style={styles.profileEmail}>{user?.email}</Text>
-              <Text style={styles.profilePhone}>📱 {user?.phone}</Text>
-            </View>
+            </ScrollView>
+          )}
 
-            <View style={styles.profileMenu}>
-              <TouchableOpacity
-                style={styles.profileMenuItem}
-                onPress={() => setActiveTab('vouchers')}
-              >
-                <Text style={styles.profileMenuIcon}>🎟️</Text>
-                <Text style={styles.profileMenuText}>Ví Voucher của tôi</Text>
-                <Text style={styles.profileMenuArrow}>›</Text>
-              </TouchableOpacity>
+          {/* TAB 2: TÌM KIẾM & DUYỆT DANH MỤC PHIM */}
+          {activeTab === 'movies' && (
+            <MovieCatalogScreen
+              onSelectShowtime={(showtimeInfo) => {
+                console.log('Đã chọn suất chiếu:', showtimeInfo);
+              }}
+            />
+          )}
 
-              <TouchableOpacity
-                style={styles.profileMenuItem}
-                onPress={() => setActiveTab('checkout')}
-              >
-                <Text style={styles.profileMenuIcon}>🍿</Text>
-                <Text style={styles.profileMenuText}>Thử Đặt Vé & Áp Voucher</Text>
-                <Text style={styles.profileMenuArrow}>›</Text>
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity
-              style={styles.logoutBtn}
-              onPress={handleLogout}
-              activeOpacity={0.8}
+          {/* TAB 3: TÀI KHOẢN CÁ NHÂN */}
+          {activeTab === 'profile' && (
+            <ScrollView
+              style={styles.profileContainer}
+              contentContainerStyle={styles.profileContent}
+              showsVerticalScrollIndicator={false}
             >
-              <Text style={styles.logoutBtnText}>ĐĂNG XUẤT</Text>
-            </TouchableOpacity>
-          </ScrollView>
-        )}
-      </View>
+              <View style={styles.avatarContainer}>
+                <View style={styles.avatarCircle}>
+                  <Text style={styles.avatarInitial}>
+                    {user?.fullName?.charAt(0)?.toUpperCase() || 'U'}
+                  </Text>
+                </View>
+                <Text style={styles.profileName}>{user?.fullName}</Text>
+                <Text style={styles.profileEmail}>{user?.email}</Text>
+                <Text style={styles.profilePhone}>📱 {user?.phone || 'Chưa cập nhật'}</Text>
+              </View>
 
-      {/* BOTTOM NAVIGATION BAR */}
-      <View style={styles.bottomNav}>
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => setActiveTab('home')}
-          activeOpacity={0.8}
-        >
-          <Text
-            style={[
-              styles.navIcon,
-              activeTab === 'home' && styles.navIconActive,
-            ]}
-          >
-            🎬
-          </Text>
-          <Text
-            style={[
-              styles.navLabel,
-              activeTab === 'home' && styles.navLabelActive,
-            ]}
-          >
-            Trang chủ
-          </Text>
-        </TouchableOpacity>
+              <View style={styles.profileMenu}>
+                <TouchableOpacity
+                  style={styles.profileMenuItem}
+                  onPress={() => setActiveTab('movies')}
+                >
+                  <Text style={styles.profileMenuIcon}>🎬</Text>
+                  <Text style={styles.profileMenuText}>Duyệt danh mục phim</Text>
+                  <Text style={styles.profileMenuArrow}>›</Text>
+                </TouchableOpacity>
+              </View>
 
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => setActiveTab('vouchers')}
-          activeOpacity={0.8}
-        >
-          <Text
-            style={[
-              styles.navIcon,
-              activeTab === 'vouchers' && styles.navIconActive,
-            ]}
-          >
-            🎟️
-          </Text>
-          <Text
-            style={[
-              styles.navLabel,
-              activeTab === 'vouchers' && styles.navLabelActive,
-            ]}
-          >
-            Voucher
-          </Text>
-        </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.logoutBtn}
+                onPress={handleLogout}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.logoutBtnText}>ĐĂNG XUẤT</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          )}
+        </View>
 
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => setActiveTab('checkout')}
-          activeOpacity={0.8}
-        >
-          <Text
-            style={[
-              styles.navIcon,
-              activeTab === 'checkout' && styles.navIconActive,
-            ]}
+        {/* 3. BOTTOM NAVIGATION BAR */}
+        <View style={styles.bottomNav}>
+          {/* TAB TRANG CHỦ */}
+          <TouchableOpacity
+            style={styles.navItem}
+            onPress={() => setActiveTab('home')}
+            activeOpacity={0.8}
           >
-            💳
-          </Text>
-          <Text
-            style={[
-              styles.navLabel,
-              activeTab === 'checkout' && styles.navLabelActive,
-            ]}
-          >
-            Thử Đặt Vé
-          </Text>
-        </TouchableOpacity>
+            <Text style={[styles.navIcon, activeTab === 'home' && styles.navIconActive]}>
+              🎬
+            </Text>
+            <Text style={[styles.navLabel, activeTab === 'home' && styles.navLabelActive]}>
+              Trang chủ
+            </Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => setActiveTab('profile')}
-          activeOpacity={0.8}
-        >
-          <Text
-            style={[
-              styles.navIcon,
-              activeTab === 'profile' && styles.navIconActive,
-            ]}
+          {/* TAB DUYỆT PHIM */}
+          <TouchableOpacity
+            style={styles.navItem}
+            onPress={() => setActiveTab('movies')}
+            activeOpacity={0.8}
           >
-            👤
-          </Text>
-          <Text
-            style={[
-              styles.navLabel,
-              activeTab === 'profile' && styles.navLabelActive,
-            ]}
+            <Text style={[styles.navIcon, activeTab === 'movies' && styles.navIconActive]}>
+              🔍
+            </Text>
+            <Text style={[styles.navLabel, activeTab === 'movies' && styles.navLabelActive]}>
+              Duyệt Phim
+            </Text>
+          </TouchableOpacity>
+
+          {/* TAB TÀI KHOẢN */}
+          <TouchableOpacity
+            style={styles.navItem}
+            onPress={() => setActiveTab('profile')}
+            activeOpacity={0.8}
           >
-            Tài khoản
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
-  );
+            <Text style={[styles.navIcon, activeTab === 'profile' && styles.navIconActive]}>
+              👤
+            </Text>
+            <Text style={[styles.navLabel, activeTab === 'profile' && styles.navLabelActive]}>
+              Tài khoản
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Mặc định: Màn hình Splash chào mừng
+  return <Splash onStart={() => setCurrentScreen('login')} />;
 }
 
 const styles = StyleSheet.create({
@@ -420,7 +368,7 @@ const styles = StyleSheet.create({
     marginRight: 5,
   },
   headerUserName: {
-    color: '#D1D1D1',
+    color: '#EEEEEE',
     fontSize: 12,
     fontWeight: '600',
   },
@@ -438,27 +386,27 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   welcomeGreeting: {
-    color: '#8A8A8A',
+    color: '#8E8E93',
     fontSize: 14,
   },
   welcomeName: {
     color: '#FFFFFF',
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
     marginTop: 2,
   },
   welcomeSub: {
-    color: '#A0A0A0',
+    color: '#AAAAAA',
     fontSize: 13,
     marginTop: 6,
     lineHeight: 19,
   },
   promoBannerCard: {
-    backgroundColor: '#201013',
+    backgroundColor: '#1C1214',
     borderRadius: 16,
     padding: 18,
     borderWidth: 1,
-    borderColor: '#521D24',
+    borderColor: '#3A1E22',
     marginBottom: 24,
   },
   promoBannerTag: {
@@ -466,14 +414,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#E50914',
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 6,
+    borderRadius: 4,
     marginBottom: 10,
   },
   promoBannerTagText: {
     color: '#FFFFFF',
     fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.8,
+    fontWeight: 'bold',
   },
   promoBannerTitle: {
     color: '#FFFFFF',
@@ -482,59 +429,65 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   promoBannerDesc: {
-    color: '#C0A0A5',
-    fontSize: 13,
-    lineHeight: 19,
-    marginBottom: 12,
+    color: '#CCCCCC',
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 14,
   },
   promoBannerBtn: {
     alignSelf: 'flex-start',
+    backgroundColor: '#2E1517',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E50914',
   },
   promoBannerBtnText: {
-    color: '#FF5C65',
-    fontSize: 13,
+    color: '#FF6B6B',
+    fontSize: 12,
     fontWeight: 'bold',
   },
   quickSectionTitle: {
     color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '700',
     marginBottom: 12,
   },
   quickGrid: {
     flexDirection: 'row',
-    gap: 12,
+    justifyContent: 'space-between',
     marginBottom: 24,
   },
   quickCard: {
-    flex: 1,
+    width: '48%',
+    backgroundColor: '#161616',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#262626',
+  },
+  quickCardIcon: {
+    fontSize: 24,
+    marginBottom: 8,
+  },
+  quickCardTitle: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  quickCardDesc: {
+    color: '#8E8E93',
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  membershipCard: {
     backgroundColor: '#161616',
     borderRadius: 14,
     padding: 16,
     borderWidth: 1,
     borderColor: '#262626',
-  },
-  quickCardIcon: {
-    fontSize: 28,
-    marginBottom: 10,
-  },
-  quickCardTitle: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: 'bold',
-    marginBottom: 4,
-  },
-  quickCardDesc: {
-    color: '#8A8A8A',
-    fontSize: 11,
-    lineHeight: 16,
-  },
-  membershipCard: {
-    backgroundColor: '#171717',
-    borderRadius: 16,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: '#2B2B2B',
   },
   memberHeader: {
     flexDirection: 'row',
@@ -543,10 +496,9 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   memberTier: {
-    color: '#E0E0E0',
+    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: 'bold',
-    letterSpacing: 0.5,
   },
   memberId: {
     color: '#777777',
@@ -555,12 +507,12 @@ const styles = StyleSheet.create({
   },
   memberBadge: {
     color: '#FFD700',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: 'bold',
   },
   memberProgressBg: {
     height: 6,
-    backgroundColor: '#2A2A2A',
+    backgroundColor: '#262626',
     borderRadius: 3,
     overflow: 'hidden',
     marginBottom: 8,
@@ -597,23 +549,23 @@ const styles = StyleSheet.create({
   },
   avatarInitial: {
     color: '#FFFFFF',
-    fontSize: 34,
+    fontSize: 32,
     fontWeight: 'bold',
   },
   profileName: {
     color: '#FFFFFF',
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
+    marginBottom: 4,
   },
   profileEmail: {
-    color: '#8A8A8A',
+    color: '#8E8E93',
     fontSize: 13,
-    marginTop: 4,
+    marginBottom: 2,
   },
   profilePhone: {
-    color: '#A0A0A0',
-    fontSize: 13,
-    marginTop: 4,
+    color: '#777777',
+    fontSize: 12,
   },
   profileMenu: {
     width: '100%',
@@ -621,25 +573,22 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     borderColor: '#262626',
-    overflow: 'hidden',
-    marginBottom: 30,
+    marginBottom: 24,
   },
   profileMenuItem: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#202020',
   },
   profileMenuIcon: {
-    fontSize: 20,
-    marginRight: 14,
+    fontSize: 18,
+    marginRight: 12,
   },
   profileMenuText: {
     flex: 1,
     color: '#FFFFFF',
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '500',
   },
   profileMenuArrow: {
     color: '#666666',
@@ -663,28 +612,29 @@ const styles = StyleSheet.create({
   },
   bottomNav: {
     flexDirection: 'row',
-    backgroundColor: '#111111',
+    height: 60,
+    backgroundColor: '#0E0E0E',
     borderTopWidth: 1,
-    borderTopColor: '#222222',
-    paddingVertical: 8,
+    borderTopColor: '#1A1A1A',
+    paddingBottom: 4,
   },
   navItem: {
     flex: 1,
-    alignItems: 'center',
     justifyContent: 'center',
+    alignItems: 'center',
   },
   navIcon: {
     fontSize: 20,
-    marginBottom: 3,
-    opacity: 0.6,
+    color: '#666666',
+    marginBottom: 2,
   },
   navIconActive: {
-    opacity: 1,
+    color: '#E50914',
   },
   navLabel: {
-    color: '#777777',
     fontSize: 11,
-    fontWeight: '600',
+    color: '#666666',
+    fontWeight: '500',
   },
   navLabelActive: {
     color: '#E50914',

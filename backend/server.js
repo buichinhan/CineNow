@@ -6,7 +6,9 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('./models/User');
-const voucherRoutes = require('./routes/voucherRoutes');
+const Movie = require('./models/Movie');
+const movieRoutes = require('./routes/movieRoutes');
+const { seedMovies } = require('./seedMovies');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -17,7 +19,7 @@ app.use(cors());
 app.use(express.json());
 
 // Routes
-app.use('/api/vouchers', voucherRoutes);
+app.use('/api/movies', movieRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({
@@ -159,8 +161,19 @@ app.post('/api/auth/login', async (req, res) => {
 
 mongoose
   .connect(MONGODB_URI)
-  .then(() => {
+  .then(async () => {
     console.log('Đã kết nối MongoDB');
+
+    // Tự động kiểm tra và khởi tạo dữ liệu phim mẫu nếu trống
+    try {
+      const movieCount = await Movie.countDocuments();
+      if (movieCount === 0) {
+        console.log('Chưa có phim trong CSDL, đang khởi tạo dữ liệu mẫu...');
+        await seedMovies();
+      }
+    } catch (err) {
+      console.warn('Lưu ý kiểm tra dữ liệu phim:', err.message);
+    }
 
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`CineNow API đang chạy tại cổng ${PORT}`);

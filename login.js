@@ -16,18 +16,17 @@ import { API_BASE_URL } from './apiConfig';
 
 const API_URL = API_BASE_URL;
 
-export default function LoginScreen({ onRegister, onLoginSuccess }) {
-  const [account, setAccount] = useState('');
+export default function Login({ onRegister, onLoginSuccess }) {
+  const [emailOrPhone, setEmailOrPhone] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
-    if (!account.trim() || !password) {
-      Alert.alert(
-        'Thông báo',
-        'Vui lòng nhập tài khoản và mật khẩu.',
-      );
+    const identifier = emailOrPhone.trim();
+
+    if (!identifier || !password) {
+      Alert.alert('Thông báo', 'Vui lòng nhập email/số điện thoại và mật khẩu.');
       return;
     }
 
@@ -40,7 +39,7 @@ export default function LoginScreen({ onRegister, onLoginSuccess }) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          emailOrPhone: account.trim(),
+          emailOrPhone: identifier,
           password,
         }),
       });
@@ -50,14 +49,22 @@ export default function LoginScreen({ onRegister, onLoginSuccess }) {
       if (!response.ok) {
         Alert.alert(
           'Đăng nhập thất bại',
-          data.message || 'Tài khoản hoặc mật khẩu không chính xác.',
+          data.message || 'Thông tin đăng nhập không chính xác.',
+        );
+        return;
+      }
+
+      if (!data.user || !data.token) {
+        Alert.alert(
+          'Lỗi dữ liệu',
+          'Máy chủ chưa trả về đầy đủ thông tin người dùng và token.',
         );
         return;
       }
 
       Alert.alert(
         'Đăng nhập thành công',
-        `Xin chào ${data.user?.fullName || 'bạn'}!`,
+        `Xin chào ${data.user.fullName || 'bạn'}!`,
         [
           {
             text: 'Tiếp tục',
@@ -72,7 +79,7 @@ export default function LoginScreen({ onRegister, onLoginSuccess }) {
     } catch (error) {
       Alert.alert(
         'Không kết nối được máy chủ',
-        'Hãy kiểm tra backend đang chạy và địa chỉ API.',
+        'Vui lòng kiểm tra kết nối Internet hoặc thử lại sau.',
       );
     } finally {
       setLoading(false);
@@ -87,11 +94,11 @@ export default function LoginScreen({ onRegister, onLoginSuccess }) {
       <StatusBar barStyle="light-content" backgroundColor="#0B0B0B" />
 
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.logoContainer}>
+        <View style={styles.logoRow}>
           <View style={styles.logoIcon}>
             <Text style={styles.playIcon}>▶</Text>
           </View>
@@ -101,104 +108,112 @@ export default function LoginScreen({ onRegister, onLoginSuccess }) {
           </Text>
         </View>
 
-        <View style={styles.headingContainer}>
+        <View style={styles.heading}>
           <Text style={styles.title}>Chào mừng trở lại!</Text>
+
           <Text style={styles.subtitle}>
             Đăng nhập để tiếp tục hành trình điện ảnh của bạn.
           </Text>
         </View>
 
-        <View style={styles.form}>
-          <Text style={styles.label}>Email hoặc số điện thoại</Text>
+        <Text style={styles.label}>Email hoặc số điện thoại</Text>
 
+        <TextInput
+          style={styles.input}
+          placeholder="Nhập email hoặc số điện thoại"
+          placeholderTextColor="#777777"
+          value={emailOrPhone}
+          onChangeText={setEmailOrPhone}
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="email-address"
+          returnKeyType="next"
+        />
+
+        <Text style={styles.label}>Mật khẩu</Text>
+
+        <View style={styles.passwordContainer}>
           <TextInput
-            style={styles.input}
-            placeholder="Nhập email hoặc số điện thoại"
+            style={styles.passwordInput}
+            placeholder="Nhập mật khẩu"
             placeholderTextColor="#777777"
-            value={account}
-            onChangeText={setAccount}
-            keyboardType="default"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry={!showPassword}
             autoCapitalize="none"
-            autoCorrect={false}
-            editable={!loading}
-            returnKeyType="next"
+            returnKeyType="done"
+            onSubmitEditing={handleLogin}
           />
 
-          <Text style={styles.label}>Mật khẩu</Text>
-
-          <View style={styles.passwordContainer}>
-            <TextInput
-              style={styles.passwordInput}
-              placeholder="Nhập mật khẩu"
-              placeholderTextColor="#777777"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
-              autoCapitalize="none"
-              editable={!loading}
-              returnKeyType="done"
-              onSubmitEditing={handleLogin}
-            />
-
-            <TouchableOpacity
-              onPress={() => setShowPassword(!showPassword)}
-              style={styles.showPasswordButton}
-              activeOpacity={0.7}
-              disabled={loading}
-            >
-              <Text style={styles.showPasswordText}>
-                {showPassword ? 'Ẩn' : 'Hiện'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
           <TouchableOpacity
-            style={styles.forgotContainer}
-            onPress={() =>
-              Alert.alert(
-                'Quên mật khẩu',
-                'Chức năng này sẽ được bổ sung sau.',
-              )
-            }
+            onPress={() => setShowPassword(!showPassword)}
             activeOpacity={0.7}
-            disabled={loading}
           >
-            <Text style={styles.forgotText}>Quên mật khẩu?</Text>
+            <Text style={styles.showPassword}>
+              {showPassword ? 'ẨN' : 'HIỆN'}
+            </Text>
           </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.loginButton, loading && styles.disabledButton]}
-            onPress={handleLogin}
-            activeOpacity={0.8}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={styles.loginButtonText}>ĐĂNG NHẬP</Text>
-            )}
-          </TouchableOpacity>
-
-          <View style={styles.registerContainer}>
-            <Text style={styles.registerText}>Chưa có tài khoản? </Text>
-
-            <TouchableOpacity
-              onPress={onRegister}
-              activeOpacity={0.7}
-              disabled={loading}
-            >
-              <Text style={styles.registerLink}>Đăng ký ngay</Text>
-            </TouchableOpacity>
-          </View>
         </View>
 
-        <View style={styles.footer}>
-          <View style={styles.footerLine} />
-          <Text style={styles.footerText}>
-            Mỗi tấm vé, một câu chuyện.
+        <TouchableOpacity
+          style={styles.forgotButton}
+          onPress={() =>
+            Alert.alert(
+              'Quên mật khẩu',
+              'Tính năng khôi phục mật khẩu sẽ được phát triển sau.',
+            )
+          }
+          activeOpacity={0.7}
+        >
+          <Text style={styles.forgotText}>Quên mật khẩu?</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.loginButton, loading && styles.disabledButton]}
+          onPress={handleLogin}
+          disabled={loading}
+          activeOpacity={0.8}
+        >
+          {loading ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.loginButtonText}>ĐĂNG NHẬP</Text>
+          )}
+        </TouchableOpacity>
+
+        <View style={styles.dividerRow}>
+          <View style={styles.divider} />
+          <Text style={styles.dividerText}>HOẶC</Text>
+          <View style={styles.divider} />
+        </View>
+
+        <TouchableOpacity
+          style={styles.googleButton}
+          onPress={() =>
+            Alert.alert(
+              'Đăng nhập Google',
+              'Tính năng đăng nhập Google chưa được tích hợp.',
+            )
+          }
+          activeOpacity={0.8}
+        >
+          <Text style={styles.googleIcon}>G</Text>
+          <Text style={styles.googleButtonText}>
+            Tiếp tục với Google
           </Text>
-          <Text style={styles.footerCopyright}>© CineNow</Text>
+        </TouchableOpacity>
+
+        <View style={styles.registerRow}>
+          <Text style={styles.registerText}>Chưa có tài khoản? </Text>
+
+          <TouchableOpacity onPress={onRegister} activeOpacity={0.7}>
+            <Text style={styles.registerLink}>Đăng ký ngay</Text>
+          </TouchableOpacity>
         </View>
+
+        <Text style={styles.footer}>
+          CineNow · Mỗi tấm vé, một câu chuyện.
+        </Text>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -209,162 +224,207 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0B0B0B',
   },
-  scrollContent: {
+
+  content: {
     flexGrow: 1,
-    paddingHorizontal: 26,
-    paddingTop: 65,
+    justifyContent: 'center',
+    paddingHorizontal: 25,
+    paddingTop: 45,
     paddingBottom: 30,
   },
-  logoContainer: {
+
+  logoRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 55,
+    marginBottom: 45,
   },
+
   logoIcon: {
-    width: 43,
-    height: 43,
+    width: 42,
+    height: 42,
     borderRadius: 12,
     backgroundColor: '#E50914',
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
     marginRight: 10,
   },
+
   playIcon: {
     color: '#FFFFFF',
     fontSize: 21,
     fontWeight: 'bold',
   },
+
   logoText: {
     color: '#FFFFFF',
     fontSize: 30,
-    fontWeight: 'bold',
-    letterSpacing: 0.5,
+    fontWeight: '800',
   },
+
   logoRed: {
     color: '#E50914',
   },
-  headingContainer: {
-    marginBottom: 32,
+
+  heading: {
+    marginBottom: 30,
   },
+
   title: {
     color: '#FFFFFF',
     fontSize: 27,
-    fontWeight: 'bold',
-    marginBottom: 12,
-  },
-  subtitle: {
-    color: '#A5A5A5',
-    fontSize: 14,
-    lineHeight: 22,
-  },
-  form: {
-    width: '100%',
-  },
-  label: {
-    color: '#F0F0F0',
-    fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '800',
     marginBottom: 10,
-    marginTop: 18,
   },
+
+  subtitle: {
+    color: '#999999',
+    fontSize: 13,
+    lineHeight: 21,
+  },
+
+  label: {
+    color: '#EEEEEE',
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 9,
+  },
+
   input: {
-    height: 54,
+    height: 52,
     borderWidth: 1,
-    borderColor: '#353535',
+    borderColor: '#333333',
     borderRadius: 12,
     backgroundColor: '#171717',
+    paddingHorizontal: 15,
     color: '#FFFFFF',
-    paddingHorizontal: 16,
     fontSize: 14,
+    marginBottom: 22,
   },
+
   passwordContainer: {
-    height: 54,
+    height: 52,
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#353535',
+    borderColor: '#333333',
     borderRadius: 12,
     backgroundColor: '#171717',
+    paddingHorizontal: 15,
   },
+
   passwordInput: {
     flex: 1,
-    height: '100%',
     color: '#FFFFFF',
-    paddingHorizontal: 16,
     fontSize: 14,
+    paddingVertical: 0,
   },
-  showPasswordButton: {
-    paddingHorizontal: 15,
+
+  showPassword: {
+    color: '#E50914',
+    fontSize: 11,
+    fontWeight: '800',
+    paddingLeft: 10,
     paddingVertical: 12,
   },
-  showPasswordText: {
-    color: '#E50914',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  forgotContainer: {
+
+  forgotButton: {
     alignSelf: 'flex-end',
-    marginTop: 16,
-    marginBottom: 28,
+    paddingVertical: 15,
+    marginBottom: 8,
   },
+
   forgotText: {
     color: '#E50914',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
   },
+
   loginButton: {
-    height: 54,
+    height: 52,
     backgroundColor: '#E50914',
     borderRadius: 12,
-    justifyContent: 'center',
     alignItems: 'center',
-    elevation: 4,
+    justifyContent: 'center',
+    marginTop: 8,
   },
+
   disabledButton: {
     opacity: 0.7,
   },
+
   loginButtonText: {
     color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: 'bold',
+    fontSize: 14,
+    fontWeight: '800',
     letterSpacing: 1,
   },
-  registerContainer: {
+
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 25,
+  },
+
+  divider: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#303030',
+  },
+
+  dividerText: {
+    color: '#777777',
+    fontSize: 10,
+    marginHorizontal: 14,
+    fontWeight: '600',
+  },
+
+  googleButton: {
+    height: 50,
+    borderWidth: 1,
+    borderColor: '#393939',
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#151515',
+  },
+
+  googleIcon: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '800',
+    marginRight: 12,
+  },
+
+  googleButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
+  registerRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    flexWrap: 'wrap',
-    marginTop: 28,
+    marginTop: 30,
   },
+
   registerText: {
-    color: '#A5A5A5',
+    color: '#999999',
     fontSize: 13,
   },
+
   registerLink: {
     color: '#E50914',
     fontSize: 13,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
+
   footer: {
-    alignItems: 'center',
-    marginTop: 55,
-  },
-  footerLine: {
-    width: 45,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: '#E50914',
-    marginBottom: 16,
-  },
-  footerText: {
-    color: '#A5A5A5',
-    fontSize: 13,
-    fontStyle: 'italic',
-  },
-  footerCopyright: {
     color: '#555555',
-    fontSize: 11,
-    marginTop: 12,
+    fontSize: 10,
+    textAlign: 'center',
+    marginTop: 35,
   },
 });
