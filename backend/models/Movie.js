@@ -1,11 +1,40 @@
 const mongoose = require('mongoose');
 
+const showtimeSubSchema = new mongoose.Schema({
+  cinemaName: {
+    type: String,
+    required: true,
+  },
+  format: {
+    type: String,
+    enum: ['2D', '3D', 'IMAX'],
+    default: '2D',
+  },
+  date: {
+    type: String, // YYYY-MM-DD
+    required: true,
+  },
+  times: [
+    {
+      time: String, // HH:mm
+      price: Number,
+      room: String,
+    },
+  ],
+});
+
 const movieSchema = new mongoose.Schema(
   {
     title: {
       type: String,
       required: true,
       trim: true,
+      index: true,
+    },
+    originalTitle: {
+      type: String,
+      trim: true,
+      index: true,
     },
     slug: {
       type: String,
@@ -23,13 +52,21 @@ const movieSchema = new mongoose.Schema(
       type: String,
       default: '2D - IMAX',
     },
+    formats: {
+      type: [String],
+      default: ['2D'],
+    },
     genre: {
       type: String,
-      required: true,
+      default: 'Khoa học viễn tưởng',
+    },
+    genres: {
+      type: [String],
+      default: [],
     },
     duration: {
-      type: String,
-      required: true,
+      type: mongoose.Schema.Types.Mixed,
+      default: '128 phút',
     },
     rating: {
       type: Number,
@@ -39,8 +76,12 @@ const movieSchema = new mongoose.Schema(
       type: String,
       default: '1.000 đánh giá',
     },
+    votesCount: {
+      type: Number,
+      default: 0,
+    },
     releaseDate: {
-      type: String,
+      type: mongoose.Schema.Types.Mixed,
       default: '16.10.2026',
     },
     director: {
@@ -48,7 +89,7 @@ const movieSchema = new mongoose.Schema(
       default: 'Lê Minh Khang',
     },
     cast: {
-      type: String,
+      type: mongoose.Schema.Types.Mixed,
       default: 'Thanh Vân, Quốc Huy',
     },
     language: {
@@ -59,31 +100,61 @@ const movieSchema = new mongoose.Schema(
       type: String,
       default: '02:14',
     },
+    trailerUrl: {
+      type: String,
+      default: '',
+    },
     description: {
       type: String,
-      required: true,
+      default: '',
+    },
+    synopsis: {
+      type: String,
+      default: '',
     },
     poster: {
       type: String,
-      required: true,
+      default: '',
+    },
+    posterUrl: {
+      type: String,
+      default: '',
     },
     backdrop: {
       type: String,
-      required: true,
+      default: '',
+    },
+    bannerUrl: {
+      type: String,
+      default: '',
     },
     status: {
       type: String,
-      enum: ['featured', 'now_showing', 'upcoming'],
       default: 'now_showing',
     },
     isFeatured: {
       type: Boolean,
       default: false,
     },
+    showtimes: [showtimeSubSchema],
   },
   {
     timestamps: true,
   }
 );
+
+// Tự động đồng bộ các trường tương đương để cả 2 tính năng đều hoạt động
+movieSchema.pre('save', function (next) {
+  if (!this.posterUrl && this.poster) this.posterUrl = this.poster;
+  if (!this.poster && this.posterUrl) this.poster = this.posterUrl;
+
+  if (!this.bannerUrl && this.backdrop) this.bannerUrl = this.backdrop;
+  if (!this.backdrop && this.bannerUrl) this.backdrop = this.bannerUrl;
+
+  if (!this.synopsis && this.description) this.synopsis = this.description;
+  if (!this.description && this.synopsis) this.description = this.synopsis;
+
+  next();
+});
 
 module.exports = mongoose.model('Movie', movieSchema);

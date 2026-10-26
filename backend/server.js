@@ -12,6 +12,9 @@ const Cinema = require('./models/Cinema');
 const Showtime = require('./models/Showtime');
 const Booking = require('./models/Booking');
 
+const movieRoutes = require('./routes/movieRoutes');
+const { seedMovies } = require('./seedMovies');
+
 const {
   INITIAL_MOVIES,
   INITIAL_CINEMAS,
@@ -22,6 +25,9 @@ const {
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const MONGODB_URI =
+  process.env.MONGODB_URI || 'mongodb://localhost:27017/cinenow';
+const JWT_SECRET = process.env.JWT_SECRET || 'cinenow_secret_key_2026';
 
 app.use(cors());
 app.use(express.json());
@@ -44,6 +50,9 @@ async function seedDatabaseIfEmpty() {
       console.log('Chưa có dữ liệu phim, đang khởi tạo seed data...');
       await Movie.insertMany(INITIAL_MOVIES);
       console.log(`Đã tạo ${INITIAL_MOVIES.length} phim mẫu.`);
+      if (typeof seedMovies === 'function') {
+        await seedMovies();
+      }
     }
 
     const cinemaCount = await Cinema.countDocuments();
@@ -56,7 +65,9 @@ async function seedDatabaseIfEmpty() {
   }
 }
 
-// ---------------------- HEALTH CHECK ----------------------
+// ---------------------- ROUTES ----------------------
+app.use('/api/movies', movieRoutes);
+
 app.get('/api/health', (req, res) => {
   res.json({
     success: true,
@@ -117,7 +128,6 @@ app.post('/api/auth/register', async (req, res) => {
         },
       });
     } else {
-      // In-memory fallback
       return res.status(201).json({
         success: true,
         message: 'Đăng ký thành công (Demo).',
@@ -175,7 +185,7 @@ app.post('/api/auth/login', async (req, res) => {
 
       const token = jwt.sign(
         { userId: user._id },
-        process.env.JWT_SECRET || 'secret',
+        JWT_SECRET,
         { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
       );
 
@@ -191,7 +201,6 @@ app.post('/api/auth/login', async (req, res) => {
         },
       });
     } else {
-      // In-memory fallback login
       return res.json({
         success: true,
         message: 'Đăng nhập thành công (Demo).',
@@ -213,14 +222,6 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 // ---------------------- TRANG CHỦ API (HOME API) ----------------------
-/**
- * GET /api/home
- * Lấy toàn bộ dữ liệu động cho Trang Chủ:
- * - featuredMovie (Phim nổi bật Hero Banner)
- * - nowShowing (Danh sách Phim đang chiếu)
- * - upcoming (Danh sách Phim sắp chiếu)
- * - nearbyCinemas (Danh sách Rạp gần bạn)
- */
 app.get('/api/home', async (req, res) => {
   try {
     let movies = [];
@@ -236,8 +237,12 @@ app.get('/api/home', async (req, res) => {
 
     const featuredMovie =
       movies.find((m) => m.isFeatured || m.status === 'featured') || movies[0];
-    const nowShowing = movies.filter((m) => m.status === 'now_showing');
-    const upcoming = movies.filter((m) => m.status === 'upcoming');
+    const nowShowing = movies.filter(
+      (m) => m.status === 'now_showing' || m.status === 'NOW_SHOWING'
+    );
+    const upcoming = movies.filter(
+      (m) => m.status === 'upcoming' || m.status === 'COMING_SOON'
+    );
     const nearbyCinemas = cinemas.slice(0, 3);
 
     return res.json({
@@ -258,92 +263,7 @@ app.get('/api/home', async (req, res) => {
   }
 });
 
-// ---------------------- MOVIES API ----------------------
-/**
- * GET /api/movies
- * Lấy danh sách phim có lọc status: ?status=now_showing|upcoming
- */
-app.get('/api/movies', async (req, res) => {
-  try {
-    const { status, search } = req.query;
-    let query = {};
-    if (status) query.status = status;
-
-    let movies = [];
-    if (isMongoConnected) {
-      if (search) {
-        query.title = { $regex: search, $options: 'i' };
-      }
-      movies = await Movie.find(query).lean();
-    } else {
-      movies = memoryStore.movies.filter((m) => {
-        let match = true;
-        if (status && m.status !== status) match = false;
-        if (search && !m.title.toLowerCase().includes(search.toLowerCase()))
-          match = false;
-        return match;
-      });
-    }
-
-    return res.json({
-      success: true,
-      data: movies,
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: 'Lỗi tải danh sách phim.',
-    });
-  }
-});
-
-/**
- * GET /api/movies/:id
- * Lấy chi tiết 1 phim theo ID hoặc slug
- */
-app.get('/api/movies/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    let movie = null;
-
-    if (isMongoConnected) {
-      if (mongoose.Types.ObjectId.isValid(id)) {
-        movie = await Movie.findById(id).lean();
-      }
-      if (!movie) {
-        movie = await Movie.findOne({ slug: id }).lean();
-      }
-    } else {
-      movie = memoryStore.movies.find(
-        (m) => m._id === id || m.slug === id || m.id === id
-      );
-    }
-
-    if (!movie) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy phim.',
-      });
-    }
-
-    return res.json({
-      success: true,
-      data: movie,
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: 'Lỗi tải chi tiết phim.',
-    });
-  }
-});
-
-// ---------------------- SHOWTIMES API (CHỌN SUẤT CHIẾU) ----------------------
-/**
- * GET /api/showtimes
- * Lấy danh sách ngày chiếu và các rạp kèm khung giờ chiếu cho phim
- * Query: ?movieId=...&date=...
- */
+// ---------------------- SHOWTIMES API ----------------------
 app.get('/api/showtimes', async (req, res) => {
   try {
     const { movieId, date } = req.query;
@@ -364,12 +284,7 @@ app.get('/api/showtimes', async (req, res) => {
   }
 });
 
-// ---------------------- SEATS API (CHỌN GHẾ) ----------------------
-/**
- * GET /api/seats
- * Lấy sơ đồ ghế, trạng thái ghế (ghế thường, VIP, đôi, đã đặt, còn trống)
- * Query: ?movieId=...&cinemaName=...&date=...&time=...
- */
+// ---------------------- SEATS API ----------------------
 app.get('/api/seats', async (req, res) => {
   try {
     const { movieId, cinemaName, date, time } = req.query;
@@ -396,11 +311,7 @@ app.get('/api/seats', async (req, res) => {
   }
 });
 
-// ---------------------- BOOKINGS API (ĐẶT VÉ) ----------------------
-/**
- * POST /api/bookings
- * Đặt vé và cập nhật trạng thái ghế
- */
+// ---------------------- BOOKINGS API ----------------------
 app.post('/api/bookings', async (req, res) => {
   try {
     const {
@@ -421,7 +332,6 @@ app.post('/api/bookings', async (req, res) => {
       });
     }
 
-    // Cập nhật trạng thái ghế trong layout thành 'booked'
     memoryStore.seatLayout.rows.forEach((row) => {
       row.seats.forEach((seat) => {
         if (seats.includes(seat.id)) {
@@ -452,7 +362,7 @@ app.post('/api/bookings', async (req, res) => {
       try {
         await Booking.create(newBooking);
       } catch (e) {
-        console.warn('Ghi booking vào Mongo thất bại, đã lưu ram:', e.message);
+        console.warn('Ghi booking vào Mongo thất bại:', e.message);
       }
     }
 
@@ -471,11 +381,8 @@ app.post('/api/bookings', async (req, res) => {
 });
 
 // ---------------------- SERVER STARTUP ----------------------
-const mongoURI =
-  process.env.MONGODB_URI || 'mongodb://localhost:27017/cinenow';
-
 mongoose
-  .connect(mongoURI, {
+  .connect(MONGODB_URI, {
     serverSelectionTimeoutMS: 2000,
   })
   .then(async () => {
@@ -493,8 +400,5 @@ mongoose
   .finally(() => {
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`CineNow API đang chạy tại http://0.0.0.0:${PORT}`);
-      console.log(`Endpoint Trang chủ: http://localhost:${PORT}/api/home`);
-      console.log(`Endpoint Suất chiếu: http://localhost:${PORT}/api/showtimes`);
-      console.log(`Endpoint Chọn ghế: http://localhost:${PORT}/api/seats`);
     });
   });

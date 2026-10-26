@@ -28,6 +28,11 @@ const userSchema = new mongoose.Schema(
       required: true,
       minlength: 8,
     },
+
+    loyaltyPoints: {
+      type: Number,
+      default: 120,
+    },
   },
   {
     timestamps: true,
