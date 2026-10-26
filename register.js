@@ -12,8 +12,9 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { API_BASE_URL } from './apiConfig';
 
-const API_URL = 'https://cinenow-backend-9on6.onrender.com/api';
+const API_URL = API_BASE_URL;
 
 export default function Register({ onLogin, onRegisterSuccess }) {
   const [fullName, setFullName] = useState('');
