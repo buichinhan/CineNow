@@ -6,12 +6,18 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('./models/User');
+const voucherRoutes = require('./routes/voucherRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/cinenow';
+const JWT_SECRET = process.env.JWT_SECRET || 'cinenow_secret_key_2026';
 
 app.use(cors());
 app.use(express.json());
+
+// Routes
+app.use('/api/vouchers', voucherRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({
@@ -127,7 +133,7 @@ app.post('/api/auth/login', async (req, res) => {
 
     const token = jwt.sign(
       { userId: user._id },
-      process.env.JWT_SECRET,
+      JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
     );
 
@@ -152,7 +158,7 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 mongoose
-  .connect(process.env.MONGODB_URI)
+  .connect(MONGODB_URI)
   .then(() => {
     console.log('Đã kết nối MongoDB');
 

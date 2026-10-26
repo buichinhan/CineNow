@@ -12,8 +12,9 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import { API_BASE_URL } from './apiConfig';
 
-const API_URL = 'http://10.0.2.2:3000/api';
+const API_URL = API_BASE_URL;
 
 export default function LoginScreen({ onRegister, onLoginSuccess }) {
   const [account, setAccount] = useState('');
