@@ -18,10 +18,11 @@ import MovieDetailScreen from './movieDetail';
 import ShowtimeScreen from './showtime';
 import SeatSelectionScreen from './seatSelection';
 import MovieCatalogScreen from './screens/MovieCatalogScreen';
+import MyTicketsScreen from './screens/MyTicketsScreen';
 
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState('splash'); // 'splash' | 'login' | 'register' | 'home' | 'movieDetail' | 'showtime' | 'seatSelection'
-  const [activeTab, setActiveTab] = useState('home'); // 'home' | 'movies' | 'profile'
+  const [currentScreen, setCurrentScreen] = useState('splash');
+  const [activeTab, setActiveTab] = useState('home');
   const [user, setUser] = useState(null);
   const [selectedMovie, setSelectedMovie] = useState(null);
   const [selectedBooking, setSelectedBooking] = useState(null);
@@ -87,7 +88,7 @@ export default function App() {
     );
   }
 
-  // 3. Màn hình Chi tiết phim (Flow đặt vé của bạn)
+  // 3. Màn hình Chi tiết phim
   if (currentScreen === 'movieDetail') {
     return (
       <MovieDetailScreen
@@ -95,13 +96,13 @@ export default function App() {
         onBack={() => setCurrentScreen('home')}
         onBookTicket={(movie) => {
           setSelectedMovie(movie);
-          setCurrentScreen('showtime'); // Bỏ chọn rạp, sang chọn suất chiếu
+          setCurrentScreen('showtime');
         }}
       />
     );
   }
 
-  // 4. Màn hình Chọn suất chiếu (Flow đặt vé của bạn)
+  // 4. Màn hình Chọn suất chiếu
   if (currentScreen === 'showtime') {
     return (
       <ShowtimeScreen
@@ -116,27 +117,32 @@ export default function App() {
     );
   }
 
-  // 5. Màn hình Chọn ghế (Flow đặt vé của bạn)
+  // 5. Màn hình Chọn ghế
   if (currentScreen === 'seatSelection') {
     return (
       <SeatSelectionScreen
         movie={selectedMovie}
         bookingData={selectedBooking}
         onBack={() => setCurrentScreen('showtime')}
-        onComplete={() => setCurrentScreen('home')}
+        onComplete={() => {
+          setCurrentScreen('home');
+          setActiveTab('tickets');
+        }}
       />
     );
   }
 
-  // 6. Màn hình Ứng dụng chính (Kết hợp Trang chủ Figma + Duyệt phim Catalog + Tài khoản)
+  // 6. Ứng dụng chính
   if (currentScreen === 'home') {
     return (
       <SafeAreaView style={styles.mainContainer}>
-        <StatusBar barStyle="light-content" backgroundColor="#0B0B0B" />
+        <StatusBar
+          barStyle="light-content"
+          backgroundColor="#0B0B0B"
+        />
 
-        {/* Nội dung theo Tab đang chọn */}
         <View style={styles.contentArea}>
-          {/* TAB 1: TRANG CHỦ CHUẨN THIẾT KẾ FIGMA */}
+          {/* TAB 1: TRANG CHỦ */}
           {activeTab === 'home' && (
             <HomeScreen
               user={user}
@@ -152,17 +158,26 @@ export default function App() {
             />
           )}
 
-          {/* TAB 2: TÌM KIẾM & DUYỆT DANH MỤC PHIM (Code đồng đội) */}
+          {/* TAB 2: DUYỆT PHIM */}
           {activeTab === 'movies' && (
             <MovieCatalogScreen
               onSelectShowtime={(showtimeInfo) => {
-                setSelectedMovie(showtimeInfo.movie || showtimeInfo);
+                setSelectedMovie(
+                  showtimeInfo.movie || showtimeInfo
+                );
                 setCurrentScreen('showtime');
               }}
             />
           )}
 
-          {/* TAB 3: TÀI KHOẢN CÁ NHÂN */}
+          {/* TAB 3: VÉ CỦA TÔI */}
+          {activeTab === 'tickets' && (
+            <MyTicketsScreen
+              onBack={() => setActiveTab('home')}
+            />
+          )}
+
+          {/* TAB 4: TÀI KHOẢN */}
           {activeTab === 'profile' && (
             <ScrollView
               style={styles.profileContainer}
@@ -175,9 +190,18 @@ export default function App() {
                     {user?.fullName?.charAt(0)?.toUpperCase() || 'U'}
                   </Text>
                 </View>
-                <Text style={styles.profileName}>{user?.fullName || 'Người dùng CineNow'}</Text>
-                <Text style={styles.profileEmail}>{user?.email || 'user@cinenow.vn'}</Text>
-                <Text style={styles.profilePhone}>📱 {user?.phone || 'Chưa cập nhật'}</Text>
+
+                <Text style={styles.profileName}>
+                  {user?.fullName || 'Người dùng CineNow'}
+                </Text>
+
+                <Text style={styles.profileEmail}>
+                  {user?.email || 'user@cinenow.vn'}
+                </Text>
+
+                <Text style={styles.profilePhone}>
+                  📱 {user?.phone || 'Chưa cập nhật'}
+                </Text>
               </View>
 
               <View style={styles.profileMenu}>
@@ -186,7 +210,9 @@ export default function App() {
                   onPress={() => setActiveTab('movies')}
                 >
                   <Text style={styles.profileMenuIcon}>🎬</Text>
-                  <Text style={styles.profileMenuText}>Duyệt danh mục phim</Text>
+                  <Text style={styles.profileMenuText}>
+                    Duyệt danh mục phim
+                  </Text>
                   <Text style={styles.profileMenuArrow}>›</Text>
                 </TouchableOpacity>
 
@@ -195,7 +221,23 @@ export default function App() {
                   onPress={() => setActiveTab('home')}
                 >
                   <Text style={styles.profileMenuIcon}>🎟️</Text>
-                  <Text style={styles.profileMenuText}>Phim đang chiếu & Đặt vé</Text>
+                  <Text style={styles.profileMenuText}>
+                    Phim đang chiếu & Đặt vé
+                  </Text>
+                  <Text style={styles.profileMenuArrow}>›</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.profileMenuItem,
+                    styles.lastProfileMenuItem,
+                  ]}
+                  onPress={() => setActiveTab('tickets')}
+                >
+                  <Text style={styles.profileMenuIcon}>🎫</Text>
+                  <Text style={styles.profileMenuText}>
+                    Vé của tôi
+                  </Text>
                   <Text style={styles.profileMenuArrow}>›</Text>
                 </TouchableOpacity>
               </View>
@@ -205,23 +247,36 @@ export default function App() {
                 onPress={handleLogout}
                 activeOpacity={0.8}
               >
-                <Text style={styles.logoutBtnText}>ĐĂNG XUẤT</Text>
+                <Text style={styles.logoutBtnText}>
+                  ĐĂNG XUẤT
+                </Text>
               </TouchableOpacity>
             </ScrollView>
           )}
         </View>
 
-        {/* BOTTOM NAVIGATION BAR */}
+        {/* THANH ĐIỀU HƯỚNG DƯỚI */}
         <View style={styles.bottomNav}>
           <TouchableOpacity
             style={styles.navItem}
             onPress={() => setActiveTab('home')}
             activeOpacity={0.8}
           >
-            <Text style={[styles.navIcon, activeTab === 'home' && styles.navIconActive]}>
+            <Text
+              style={[
+                styles.navIcon,
+                activeTab === 'home' && styles.navIconActive,
+              ]}
+            >
               🏠
             </Text>
-            <Text style={[styles.navLabel, activeTab === 'home' && styles.navLabelActive]}>
+
+            <Text
+              style={[
+                styles.navLabel,
+                activeTab === 'home' && styles.navLabelActive,
+              ]}
+            >
               Trang chủ
             </Text>
           </TouchableOpacity>
@@ -231,11 +286,46 @@ export default function App() {
             onPress={() => setActiveTab('movies')}
             activeOpacity={0.8}
           >
-            <Text style={[styles.navIcon, activeTab === 'movies' && styles.navIconActive]}>
+            <Text
+              style={[
+                styles.navIcon,
+                activeTab === 'movies' && styles.navIconActive,
+              ]}
+            >
               🔍
             </Text>
-            <Text style={[styles.navLabel, activeTab === 'movies' && styles.navLabelActive]}>
-              Duyệt Phim
+
+            <Text
+              style={[
+                styles.navLabel,
+                activeTab === 'movies' && styles.navLabelActive,
+              ]}
+            >
+              Duyệt phim
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.navItem}
+            onPress={() => setActiveTab('tickets')}
+            activeOpacity={0.8}
+          >
+            <Text
+              style={[
+                styles.navIcon,
+                activeTab === 'tickets' && styles.navIconActive,
+              ]}
+            >
+              🎫
+            </Text>
+
+            <Text
+              style={[
+                styles.navLabel,
+                activeTab === 'tickets' && styles.navLabelActive,
+              ]}
+            >
+              Vé của tôi
             </Text>
           </TouchableOpacity>
 
@@ -244,10 +334,21 @@ export default function App() {
             onPress={() => setActiveTab('profile')}
             activeOpacity={0.8}
           >
-            <Text style={[styles.navIcon, activeTab === 'profile' && styles.navIconActive]}>
+            <Text
+              style={[
+                styles.navIcon,
+                activeTab === 'profile' && styles.navIconActive,
+              ]}
+            >
               👤
             </Text>
-            <Text style={[styles.navLabel, activeTab === 'profile' && styles.navLabelActive]}>
+
+            <Text
+              style={[
+                styles.navLabel,
+                activeTab === 'profile' && styles.navLabelActive,
+              ]}
+            >
               Tài khoản
             </Text>
           </TouchableOpacity>
@@ -265,21 +366,26 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0B0B0B',
   },
+
   contentArea: {
     flex: 1,
   },
+
   profileContainer: {
     flex: 1,
   },
+
   profileContent: {
     padding: 20,
     alignItems: 'center',
   },
+
   avatarContainer: {
     alignItems: 'center',
     marginBottom: 24,
     marginTop: 20,
   },
+
   avatarCircle: {
     width: 80,
     height: 80,
@@ -289,26 +395,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
+
   avatarInitial: {
     color: '#FFFFFF',
     fontSize: 32,
     fontWeight: 'bold',
   },
+
   profileName: {
     color: '#FFFFFF',
     fontSize: 20,
     fontWeight: 'bold',
     marginBottom: 4,
   },
+
   profileEmail: {
     color: '#8E8E93',
     fontSize: 14,
     marginBottom: 4,
   },
+
   profilePhone: {
     color: '#777777',
     fontSize: 13,
   },
+
   profileMenu: {
     width: '100%',
     backgroundColor: '#161616',
@@ -316,7 +427,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#262626',
     marginBottom: 24,
+    overflow: 'hidden',
   },
+
   profileMenuItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -324,20 +437,28 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#222222',
   },
+
+  lastProfileMenuItem: {
+    borderBottomWidth: 0,
+  },
+
   profileMenuIcon: {
     fontSize: 18,
     marginRight: 12,
   },
+
   profileMenuText: {
     flex: 1,
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '500',
   },
+
   profileMenuArrow: {
     color: '#666666',
     fontSize: 18,
   },
+
   logoutBtn: {
     width: '100%',
     height: 50,
@@ -348,38 +469,45 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+
   logoutBtnText: {
     color: '#FF4A52',
     fontWeight: 'bold',
     fontSize: 14,
     letterSpacing: 1,
   },
+
   bottomNav: {
     flexDirection: 'row',
-    height: 60,
+    height: 64,
     backgroundColor: '#121214',
     borderTopWidth: 1,
     borderTopColor: '#222226',
     paddingBottom: 4,
   },
+
   navItem: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
+
   navIcon: {
     fontSize: 20,
     color: '#71717A',
     marginBottom: 2,
   },
+
   navIconActive: {
     color: '#E50914',
   },
+
   navLabel: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#71717A',
     fontWeight: '500',
   },
+
   navLabelActive: {
     color: '#E50914',
     fontWeight: 'bold',
