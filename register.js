@@ -27,6 +27,7 @@ export default function Register({ onLogin, onRegisterSuccess }) {
   const [loading, setLoading] = useState(false);
 
   const handleRegister = async () => {
+  console.log('CineNow: Đã bấm nút ĐĂNG KÝ');
     if (
       !fullName.trim() ||
       !email.trim() ||
@@ -39,9 +40,9 @@ export default function Register({ onLogin, onRegisterSuccess }) {
     }
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      Alert.alert('Thông báo', 'Email chưa đúng định dạng.');
-      return;
-    }
+  Alert.alert('Thông báo', 'Email chưa đúng định dạng.');
+  return;
+}
 
     if (!/^\d{10,11}$/.test(phone.trim())) {
       Alert.alert(
@@ -69,7 +70,7 @@ export default function Register({ onLogin, onRegisterSuccess }) {
 
     try {
       setLoading(true);
-
+console.log('CineNow: Đang gọi API đăng ký:', API_URL);
       const response = await fetch(`${API_URL}/auth/register`, {
         method: 'POST',
         headers: {
@@ -84,7 +85,7 @@ export default function Register({ onLogin, onRegisterSuccess }) {
       });
 
       const data = await response.json();
-
+console.log('CineNow: Phản hồi đăng ký:', response.status, data);
       if (!response.ok) {
         Alert.alert(
           'Đăng ký chưa thành công',

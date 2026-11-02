@@ -3,237 +3,137 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 
-const User = require('./models/User');
 const Movie = require('./models/Movie');
 const Cinema = require('./models/Cinema');
-const Showtime = require('./models/Showtime');
 const Booking = require('./models/Booking');
 
 const movieRoutes = require('./routes/movieRoutes');
+const authRoutes = require('./routes/auth');
 const showtimeRoutes = require('./routes/showtimeRoutes');
-const { seedMovies } = require('./seedMovies');
 
 const {
   INITIAL_MOVIES,
   INITIAL_CINEMAS,
-  SHOWTIME_DATES,
-  SHOWTIME_CINEMAS,
   INITIAL_SEAT_LAYOUT,
 } = require('./seedData');
 
+// ====================== APP CONFIGURATION ======================
+
 const app = express();
 const PORT = process.env.PORT || 3000;
-const MONGODB_URI =
-  process.env.MONGODB_URI || 'mongodb://localhost:27017/cinenow';
-const JWT_SECRET = process.env.JWT_SECRET || 'cinenow_secret_key_2026';
+const MONGODB_URI = process.env.MONGODB_URI;
 
 app.use(cors());
 app.use(express.json());
 
-// In-memory runtime store fallback (used if MongoDB is connecting or offline)
-let memoryStore = {
-  movies: [...INITIAL_MOVIES.map((m, idx) => ({ ...m, _id: `mem_movie_${idx + 1}` }))],
-  cinemas: [...INITIAL_CINEMAS.map((c, idx) => ({ ...c, _id: `mem_cinema_${idx + 1}` }))],
+// ====================== DATABASE STATUS ======================
+
+let isMongoConnected = false;
+
+// ====================== IN-MEMORY DATA ======================
+// Dữ liệu dự phòng khi MongoDB chưa kết nối.
+// Đăng ký và đăng nhập vẫn yêu cầu MongoDB hoạt động.
+
+const memoryStore = {
+  movies: INITIAL_MOVIES.map((movie, index) => ({
+    ...movie,
+    _id: `mem_movie_${index + 1}`,
+  })),
+
+  cinemas: INITIAL_CINEMAS.map((cinema, index) => ({
+    ...cinema,
+    _id: `mem_cinema_${index + 1}`,
+  })),
+
   seatLayout: JSON.parse(JSON.stringify(INITIAL_SEAT_LAYOUT)),
   bookings: [],
 };
 
-let isMongoConnected = false;
-
-// Đưa biến trạng thái vào app.locals để các router con truy cập đồng nhất
+// Cho phép các router truy cập dữ liệu và trạng thái chung.
 app.locals.memoryStore = memoryStore;
 app.locals.isMongoConnected = false;
 
-// Auto-seed database when MongoDB connects
+// ====================== SEED DATABASE ======================
+
 async function seedDatabaseIfEmpty() {
   try {
     const movieCount = await Movie.countDocuments();
+
     if (movieCount === 0) {
-      console.log('Chưa có dữ liệu phim, đang khởi tạo seed data...');
+      console.log(
+        'Chưa có dữ liệu phim, đang khởi tạo dữ liệu mẫu...'
+      );
+
       await Movie.insertMany(INITIAL_MOVIES);
+
       console.log(`Đã tạo ${INITIAL_MOVIES.length} phim mẫu.`);
-      if (typeof seedMovies === 'function') {
-        await seedMovies();
-      }
     }
 
     const cinemaCount = await Cinema.countDocuments();
+
     if (cinemaCount === 0) {
       await Cinema.insertMany(INITIAL_CINEMAS);
+
       console.log(`Đã tạo ${INITIAL_CINEMAS.length} rạp mẫu.`);
     }
-  } catch (err) {
-    console.error('Lỗi khi seed data:', err.message);
+  } catch (error) {
+    console.error(
+      'Lỗi khi khởi tạo dữ liệu mẫu:',
+      error.message
+    );
   }
 }
 
-// ---------------------- ROUTES ----------------------
-app.use('/api/movies', movieRoutes);
-app.use('/api/showtimes', showtimeRoutes);
+// ====================== HEALTH CHECK ======================
 
 app.get('/api/health', (req, res) => {
-  res.json({
-    success: true,
-    message: 'CineNow API đang hoạt động',
-    database: isMongoConnected ? 'MongoDB Connected' : 'In-Memory Ready',
+  const connected = mongoose.connection.readyState === 1;
+
+  return res.status(connected ? 200 : 503).json({
+    success: connected,
+    message: connected
+      ? 'CineNow API đang hoạt động'
+      : 'CineNow API đang chạy nhưng MongoDB chưa sẵn sàng',
+    database: connected
+      ? 'MongoDB Connected'
+      : 'Disconnected',
   });
 });
 
-// ---------------------- AUTH ROUTES ----------------------
-// ĐĂNG KÝ
-app.post('/api/auth/register', async (req, res) => {
-  try {
-    const { fullName, email, phone, password } = req.body;
+// ====================== AUTH ROUTES ======================
+// Đăng ký và đăng nhập yêu cầu MongoDB hoạt động.
 
-    if (!fullName?.trim() || !email?.trim() || !phone?.trim() || !password) {
-      return res.status(400).json({
-        message: 'Vui lòng nhập đầy đủ thông tin.',
-      });
-    }
-
-    if (password.length < 8) {
-      return res.status(400).json({
-        message: 'Mật khẩu phải có ít nhất 8 ký tự.',
-      });
-    }
-
-    const normalizedEmail = email.trim().toLowerCase();
-    const normalizedPhone = phone.trim();
-
-    if (isMongoConnected) {
-      const existingUser = await User.findOne({
-        $or: [{ email: normalizedEmail }, { phone: normalizedPhone }],
-      });
-
-      if (existingUser) {
-        return res.status(409).json({
-          message: 'Email hoặc số điện thoại đã được sử dụng.',
-        });
-      }
-
-      const hashedPassword = await bcrypt.hash(password, 10);
-
-      const user = await User.create({
-        fullName: fullName.trim(),
-        email: normalizedEmail,
-        phone: normalizedPhone,
-        password: hashedPassword,
-      });
-
-      return res.status(201).json({
-        success: true,
-        message: 'Đăng ký tài khoản thành công.',
-        user: {
-          id: user._id,
-          fullName: user.fullName,
-          email: user.email,
-          phone: user.phone,
-        },
-      });
-    } else {
-      return res.status(201).json({
-        success: true,
-        message: 'Đăng ký thành công (Demo).',
-        user: {
-          id: 'demo_user_1',
-          fullName: fullName.trim(),
-          email: normalizedEmail,
-          phone: normalizedPhone,
-        },
-      });
-    }
-  } catch (error) {
-    console.error('Lỗi đăng ký:', error.message);
-    if (error.code === 11000) {
-      return res.status(409).json({
-        message: 'Email hoặc số điện thoại đã được sử dụng.',
-      });
-    }
-    return res.status(500).json({
-      message: 'Lỗi máy chủ. Vui lòng thử lại.',
+app.use('/api/auth', (req, res, next) => {
+  if (mongoose.connection.readyState !== 1) {
+    return res.status(503).json({
+      success: false,
+      message:
+        'Cơ sở dữ liệu chưa sẵn sàng. Vui lòng thử lại sau.',
     });
   }
-});
 
-// ĐĂNG NHẬP BẰNG EMAIL HOẶC SỐ ĐIỆN THOẠI
-app.post('/api/auth/login', async (req, res) => {
-  try {
-    const { emailOrPhone, email, password } = req.body;
-    const identifier = (emailOrPhone || email || '').trim();
+  next();
+}, authRoutes);
 
-    if (!identifier || !password) {
-      return res.status(400).json({
-        message: 'Vui lòng nhập tài khoản và mật khẩu.',
-      });
-    }
+// ====================== MOVIE ROUTES ======================
 
-    if (isMongoConnected) {
-      const isEmail = identifier.includes('@');
-      const user = await User.findOne(
-        isEmail ? { email: identifier.toLowerCase() } : { phone: identifier }
-      );
+app.use('/api/movies', movieRoutes);
 
-      if (!user) {
-        return res.status(401).json({
-          message: 'Tài khoản hoặc mật khẩu không chính xác.',
-        });
-      }
+// ====================== SHOWTIME ROUTES ======================
+// Tích hợp router suất chiếu từ nhánh main.
+// Không đăng ký thêm API GET /api/showtimes cũ tại đây.
 
-      const isPasswordCorrect = await bcrypt.compare(password, user.password);
-      if (!isPasswordCorrect) {
-        return res.status(401).json({
-          message: 'Tài khoản hoặc mật khẩu không chính xác.',
-        });
-      }
+app.use('/api/showtimes', showtimeRoutes);
 
-      const token = jwt.sign(
-        { userId: user._id },
-        JWT_SECRET,
-        { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
-      );
+// ====================== HOME API ======================
 
-      return res.json({
-        success: true,
-        message: 'Đăng nhập thành công.',
-        token,
-        user: {
-          id: user._id,
-          fullName: user.fullName,
-          email: user.email,
-          phone: user.phone,
-        },
-      });
-    } else {
-      return res.json({
-        success: true,
-        message: 'Đăng nhập thành công (Demo).',
-        token: 'demo_jwt_token',
-        user: {
-          id: 'demo_user_1',
-          fullName: 'Nguyễn An',
-          email: identifier.includes('@') ? identifier : 'nguyenan@cinenow.vn',
-          phone: '0901234567',
-        },
-      });
-    }
-  } catch (error) {
-    console.error('Lỗi đăng nhập:', error.message);
-    return res.status(500).json({
-      message: 'Lỗi máy chủ. Vui lòng thử lại.',
-    });
-  }
-});
-
-// ---------------------- TRANG CHỦ API (HOME API) ----------------------
 app.get('/api/home', async (req, res) => {
   try {
-    let movies = [];
-    let cinemas = [];
+    let movies;
+    let cinemas;
 
-    if (isMongoConnected) {
+    if (mongoose.connection.readyState === 1) {
       movies = await Movie.find().lean();
       cinemas = await Cinema.find().lean();
     } else {
@@ -242,13 +142,25 @@ app.get('/api/home', async (req, res) => {
     }
 
     const featuredMovie =
-      movies.find((m) => m.isFeatured || m.status === 'featured') || movies[0];
+      movies.find(
+        (movie) =>
+          movie.isFeatured || movie.status === 'featured'
+      ) ||
+      movies[0] ||
+      null;
+
     const nowShowing = movies.filter(
-      (m) => m.status === 'now_showing' || m.status === 'NOW_SHOWING'
+      (movie) =>
+        movie.status === 'now_showing' ||
+        movie.status === 'NOW_SHOWING'
     );
+
     const upcoming = movies.filter(
-      (m) => m.status === 'upcoming' || m.status === 'COMING_SOON'
+      (movie) =>
+        movie.status === 'upcoming' ||
+        movie.status === 'COMING_SOON'
     );
+
     const nearbyCinemas = cinemas.slice(0, 3);
 
     return res.json({
@@ -262,6 +174,7 @@ app.get('/api/home', async (req, res) => {
     });
   } catch (error) {
     console.error('Lỗi /api/home:', error.message);
+
     return res.status(500).json({
       success: false,
       message: 'Lỗi tải dữ liệu trang chủ.',
@@ -269,26 +182,51 @@ app.get('/api/home', async (req, res) => {
   }
 });
 
-// ---------------------- SEATS API ----------------------
+// ====================== SEATS API ======================
+
 app.get('/api/seats', async (req, res) => {
   try {
-    const { movieId, cinemaName, date, time } = req.query;
-
     return res.json({
       success: true,
       data: {
         room: 'PHÒNG 03',
         seatLayout: memoryStore.seatLayout,
+
         legend: [
-          { type: 'standard', label: 'Thường', color: '#3F3F46', price: 85000 },
-          { type: 'vip', label: 'VIP', color: '#EAB308', price: 95000 },
-          { type: 'sweetbox', label: 'Ghế đôi', color: '#881337', price: 190000 },
-          { type: 'booked', label: 'Đã đặt', color: '#18181B' },
-          { type: 'selected', label: 'Đang chọn', color: '#E50914' },
+          {
+            type: 'standard',
+            label: 'Thường',
+            color: '#3F3F46',
+            price: 85000,
+          },
+          {
+            type: 'vip',
+            label: 'VIP',
+            color: '#EAB308',
+            price: 95000,
+          },
+          {
+            type: 'sweetbox',
+            label: 'Ghế đôi',
+            color: '#881337',
+            price: 190000,
+          },
+          {
+            type: 'booked',
+            label: 'Đã đặt',
+            color: '#18181B',
+          },
+          {
+            type: 'selected',
+            label: 'Đang chọn',
+            color: '#E50914',
+          },
         ],
       },
     });
   } catch (error) {
+    console.error('Lỗi /api/seats:', error.message);
+
     return res.status(500).json({
       success: false,
       message: 'Lỗi tải sơ đồ ghế.',
@@ -296,7 +234,8 @@ app.get('/api/seats', async (req, res) => {
   }
 });
 
-// ---------------------- BOOKINGS API ----------------------
+// ====================== BOOKINGS API ======================
+
 app.post('/api/bookings', async (req, res) => {
   try {
     const {
@@ -310,26 +249,37 @@ app.post('/api/bookings', async (req, res) => {
       totalPrice,
     } = req.body;
 
-    if (!seats || !seats.length || !movieTitle) {
+    if (
+      !Array.isArray(seats) ||
+      seats.length === 0 ||
+      !movieTitle
+    ) {
       return res.status(400).json({
         success: false,
         message: 'Vui lòng chọn ít nhất 1 ghế.',
       });
     }
 
-    memoryStore.seatLayout.rows.forEach((row) => {
-      row.seats.forEach((seat) => {
-        if (seats.includes(seat.id)) {
-          seat.status = 'booked';
-        }
-      });
-    });
+    // Cập nhật trạng thái ghế trong dữ liệu dự phòng.
+    const seatLayout = memoryStore.seatLayout;
 
-    const bookingCode = `CN-${Math.floor(100000 + Math.random() * 900000)}`;
+    if (seatLayout?.rows) {
+      seatLayout.rows.forEach((row) => {
+        row.seats.forEach((seat) => {
+          if (seats.includes(seat.id)) {
+            seat.status = 'booked';
+          }
+        });
+      });
+    }
+
+    const bookingCode =
+      `CN-${Math.floor(100000 + Math.random() * 900000)}`;
 
     const newBooking = {
       id: `booking_${Date.now()}`,
       bookingCode,
+      userId,
       movieTitle,
       cinemaName,
       room: room || 'PHÒNG 03',
@@ -341,23 +291,28 @@ app.post('/api/bookings', async (req, res) => {
       createdAt: new Date().toISOString(),
     };
 
-    memoryStore.bookings.push(newBooking);
+    if (mongoose.connection.readyState === 1) {
+      // Chỉ trả thành công khi lưu được đơn vào MongoDB.
+      const savedBooking = await Booking.create(newBooking);
 
-    if (isMongoConnected) {
-      try {
-        await Booking.create(newBooking);
-      } catch (e) {
-        console.warn('Ghi booking vào Mongo thất bại:', e.message);
-      }
+      return res.status(201).json({
+        success: true,
+        message: 'Đặt vé thành công!',
+        data: savedBooking,
+      });
     }
+
+    // Chế độ dự phòng phục vụ demo khi MongoDB chưa kết nối.
+    memoryStore.bookings.push(newBooking);
 
     return res.status(201).json({
       success: true,
-      message: 'Đặt vé thành công!',
+      message: 'Đặt vé thành công (Demo)!',
       data: newBooking,
     });
   } catch (error) {
     console.error('Lỗi đặt vé:', error.message);
+
     return res.status(500).json({
       success: false,
       message: 'Không thể tạo đơn đặt vé.',
@@ -365,26 +320,79 @@ app.post('/api/bookings', async (req, res) => {
   }
 });
 
-// ---------------------- SERVER STARTUP ----------------------
-mongoose
-  .connect(MONGODB_URI, {
-    serverSelectionTimeoutMS: 2000,
-  })
-  .then(async () => {
+// ====================== ERROR HANDLER ======================
+
+// Xử lý JSON không hợp lệ.
+app.use((error, req, res, next) => {
+  if (error instanceof SyntaxError && error.status === 400) {
+    return res.status(400).json({
+      success: false,
+      message: 'Dữ liệu JSON không hợp lệ.',
+    });
+  }
+
+  console.error('Lỗi server:', error.message);
+
+  return res.status(500).json({
+    success: false,
+    message: 'Đã xảy ra lỗi máy chủ.',
+  });
+});
+
+// ====================== MONGODB CONNECTION ======================
+
+async function connectDatabase() {
+  if (!MONGODB_URI) {
+    console.error(
+      'Thiếu MONGODB_URI. Hãy cấu hình biến môi trường trong file .env hoặc trên Render.'
+    );
+    return;
+  }
+
+  try {
+    await mongoose.connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: 10000,
+    });
+
     isMongoConnected = true;
     app.locals.isMongoConnected = true;
-    console.log('Đã kết nối MongoDB thành công');
+
+    console.log('Đã kết nối MongoDB thành công.');
+    console.log('Database:', mongoose.connection.name);
+
     await seedDatabaseIfEmpty();
-  })
-  .catch((error) => {
-    console.warn(
-      'Chưa thể kết nối MongoDB:',
-      error.message,
-      '- Server sẽ chạy chế độ In-Memory API sẵn sàng phục vụ frontend ngay!'
+  } catch (error) {
+    isMongoConnected = false;
+    app.locals.isMongoConnected = false;
+
+    console.error(
+      'Không thể kết nối MongoDB:',
+      error.message
     );
-  })
-  .finally(() => {
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`CineNow API đang chạy tại http://0.0.0.0:${PORT}`);
-    });
-  });
+  }
+}
+
+// Theo dõi trạng thái kết nối khi MongoDB ngắt hoặc kết nối lại.
+mongoose.connection.on('disconnected', () => {
+  isMongoConnected = false;
+  app.locals.isMongoConnected = false;
+
+  console.warn('MongoDB đã ngắt kết nối.');
+});
+
+mongoose.connection.on('connected', () => {
+  isMongoConnected = true;
+  app.locals.isMongoConnected = true;
+
+  console.log('MongoDB đã kết nối.');
+});
+
+// ====================== START SERVER ======================
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`CineNow API đang chạy trên cổng ${PORT}.`);
+  console.log(`Health check: /api/health`);
+});
+
+// Khởi động kết nối database sau khi mở HTTP server.
+connectDatabase();
