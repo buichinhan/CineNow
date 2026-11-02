@@ -42,7 +42,7 @@ export async function fetchMovieDetail(movieId) {
 }
 
 /**
- * Gọi API lấy danh sách suất chiếu theo ngày
+ * Gọi API lấy danh sách suất chiếu theo ngày (cho giao diện đặt vé)
  */
 export async function fetchShowtimes(movieId, date) {
   try {
@@ -88,6 +88,112 @@ export async function createBooking(bookingPayload) {
     return json;
   } catch (error) {
     console.warn('Lỗi gọi API /bookings:', error.message);
+    throw error;
+  }
+}
+
+// =========================================================================
+// QUẢN LÝ LỊCH CHIẾU VÀ KIỂM TRA XUNG ĐỘT (SHOWTIME MANAGEMENT & CONFLICT)
+// =========================================================================
+
+/**
+ * Gọi API kiểm tra trước xung đột thời gian & phòng chiếu (Preview Conflict)
+ * @param {Object} payload { movieId, cinemaName, room, date, startTime, bufferMinutes, excludeShowtimeId }
+ */
+export async function checkShowtimeConflictApi(payload) {
+  try {
+    const res = await fetch(`${API_BASE_URL}/showtimes/check-conflict`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const json = await res.json();
+    return json;
+  } catch (error) {
+    console.warn('Lỗi kiểm tra xung đột lịch chiếu:', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Gọi API tạo mới lịch chiếu (Có kiểm tra xung đột phòng chiếu & thời gian)
+ * @param {Object} payload { movieId, cinemaName, room, date, startTime, format, price, bufferMinutes }
+ */
+export async function createShowtimeApi(payload) {
+  try {
+    const res = await fetch(`${API_BASE_URL}/showtimes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      throw new Error(json.message || 'Không thể tạo lịch chiếu.');
+    }
+    return json;
+  } catch (error) {
+    console.warn('Lỗi tạo lịch chiếu:', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Gọi API cập nhật/chỉnh sửa lịch chiếu
+ * @param {string} id Mã lịch chiếu cần cập nhật
+ * @param {Object} payload Các trường cần cập nhật
+ */
+export async function updateShowtimeApi(id, payload) {
+  try {
+    const res = await fetch(`${API_BASE_URL}/showtimes/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      throw new Error(json.message || 'Không thể cập nhật lịch chiếu.');
+    }
+    return json;
+  } catch (error) {
+    console.warn(`Lỗi cập nhật lịch chiếu ${id}:`, error.message);
+    throw error;
+  }
+}
+
+/**
+ * Gọi API xóa lịch chiếu
+ * @param {string} id Mã lịch chiếu cần xóa
+ */
+export async function deleteShowtimeApi(id) {
+  try {
+    const res = await fetch(`${API_BASE_URL}/showtimes/${id}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      throw new Error(json.message || 'Không thể xóa lịch chiếu.');
+    }
+    return json;
+  } catch (error) {
+    console.warn(`Lỗi xóa lịch chiếu ${id}:`, error.message);
+    throw error;
+  }
+}
+
+/**
+ * Gọi API lấy danh sách lịch chiếu phục vụ quản lý (Management view)
+ * @param {Object} filters { movieId, cinemaName, date, room, status }
+ */
+export async function fetchShowtimesManagement(filters = {}) {
+  try {
+    const params = new URLSearchParams({ manage: 'true', ...filters });
+    const res = await fetch(`${API_BASE_URL}/showtimes?${params.toString()}`);
+    if (!res.ok) throw new Error('Không thể tải danh sách quản lý lịch chiếu');
+    const json = await res.json();
+    return json.data || [];
+  } catch (error) {
+    console.warn('Lỗi lấy danh sách quản lý lịch chiếu:', error.message);
     throw error;
   }
 }
