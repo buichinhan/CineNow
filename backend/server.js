@@ -13,6 +13,7 @@ const Showtime = require('./models/Showtime');
 const Booking = require('./models/Booking');
 
 const movieRoutes = require('./routes/movieRoutes');
+const showtimeRoutes = require('./routes/showtimeRoutes');
 const { seedMovies } = require('./seedMovies');
 
 const {
@@ -42,6 +43,10 @@ let memoryStore = {
 
 let isMongoConnected = false;
 
+// Đưa biến trạng thái vào app.locals để các router con truy cập đồng nhất
+app.locals.memoryStore = memoryStore;
+app.locals.isMongoConnected = false;
+
 // Auto-seed database when MongoDB connects
 async function seedDatabaseIfEmpty() {
   try {
@@ -67,6 +72,7 @@ async function seedDatabaseIfEmpty() {
 
 // ---------------------- ROUTES ----------------------
 app.use('/api/movies', movieRoutes);
+app.use('/api/showtimes', showtimeRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({
@@ -263,27 +269,6 @@ app.get('/api/home', async (req, res) => {
   }
 });
 
-// ---------------------- SHOWTIMES API ----------------------
-app.get('/api/showtimes', async (req, res) => {
-  try {
-    const { movieId, date } = req.query;
-
-    return res.json({
-      success: true,
-      data: {
-        dates: SHOWTIME_DATES,
-        selectedDate: date || SHOWTIME_DATES[0].id,
-        cinemas: SHOWTIME_CINEMAS,
-      },
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: 'Lỗi tải suất chiếu.',
-    });
-  }
-});
-
 // ---------------------- SEATS API ----------------------
 app.get('/api/seats', async (req, res) => {
   try {
@@ -387,6 +372,7 @@ mongoose
   })
   .then(async () => {
     isMongoConnected = true;
+    app.locals.isMongoConnected = true;
     console.log('Đã kết nối MongoDB thành công');
     await seedDatabaseIfEmpty();
   })
