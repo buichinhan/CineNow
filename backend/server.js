@@ -280,16 +280,51 @@ app.get('/api/bookings', async (req, res) => {
       });
     }
 
-    const bookings = await Booking.find({
-      userId: decoded.userId,
-    })
-      .sort({ createdAt: -1 })
-      .lean();
+   const bookings = await Booking.find({
+  userId: decoded.userId,
+})
+  .sort({ createdAt: -1 })
+  .lean();
 
-    return res.json({
-      success: true,
-      data: bookings,
-    });
+// Lấy tên phim từ danh sách vé
+const movieTitles = [
+  ...new Set(
+    bookings
+      .map((booking) => booking.movieTitle)
+      .filter(Boolean)
+  ),
+];
+
+// Tìm poster tương ứng trong MongoDB
+const movies = movieTitles.length
+  ? await Movie.find({
+      title: { $in: movieTitles },
+    })
+      .select('title poster posterUrl')
+      .lean()
+  : [];
+
+// Tạo bảng tra cứu poster
+const posterMap = new Map(
+  movies.map((movie) => [
+    movie.title,
+    movie.posterUrl || movie.poster || '',
+  ])
+);
+
+// Bổ sung poster vào từng vé
+const bookingsWithPoster = bookings.map((booking) => ({
+  ...booking,
+  poster:
+    booking.poster ||
+    posterMap.get(booking.movieTitle) ||
+    '',
+}));
+
+return res.json({
+  success: true,
+  data: bookingsWithPoster,
+});
   } catch (error) {
     console.error('Lỗi lấy lịch sử vé:', error.message);
 
