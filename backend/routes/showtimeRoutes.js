@@ -266,7 +266,12 @@ router.get('/', async (req, res) => {
     if (isMongo) {
       const filter = {};
       if (movieId) filter.movieId = movieId;
-      if (date) filter.date = date;
+      if (
+  date &&
+  (manage === 'true' || req.query.view === 'manage' || room)
+) {
+  filter.date = date;
+}
       if (cinemaName) filter.cinemaName = new RegExp(cinemaName.trim(), 'i');
       if (room) filter.room = new RegExp(room.trim(), 'i');
       if (status) filter.status = status;
@@ -275,8 +280,12 @@ router.get('/', async (req, res) => {
     } else {
       let result = [...inMemoryShowtimes];
       if (movieId) result = result.filter((s) => s.movieId === movieId);
-      if (date) result = result.filter((s) => s.date === date);
-      if (cinemaName)
+if (
+  date &&
+  (manage === 'true' || req.query.view === 'manage' || room)
+) {
+  result = result.filter((s) => s.date === date);
+}      if (cinemaName)
         result = result.filter((s) =>
           s.cinemaName.toLowerCase().includes(cinemaName.trim().toLowerCase())
         );
@@ -299,17 +308,89 @@ router.get('/', async (req, res) => {
     }
 
     // Mặc định hoặc cho client app: Đảm bảo tương thích cả dữ liệu chọn rạp của App và danh sách mới
-    return res.json({
-      success: true,
-      count: showtimes.length,
-      data: {
-        dates: SHOWTIME_DATES,
-        selectedDate: date || SHOWTIME_DATES[0].id,
-        cinemas: SHOWTIME_CINEMAS,
-        list: showtimes,
-      },
-      showtimes,
+   const now = new Date();
+const vietnamToday = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Ho_Chi_Minh',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+}).format(now);
+
+const availableShowtimes = showtimes.filter((s) => {
+  if (s.status !== 'scheduled') return false;
+  if (s.date < vietnamToday) return false;
+
+  if (s.date === vietnamToday) {
+    const currentTime = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).format(now);
+
+    return s.startTime > currentTime;
+  }
+
+  return true;
+});
+
+const uniqueDates = [...new Set(availableShowtimes.map((s) => s.date))]
+  .sort();
+
+const dates = uniqueDates.map((id) => {
+  const [year, month, day] = id.split('-').map(Number);
+  const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+
+  return {
+    id,
+    dayOfWeek: ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'][weekday],
+    dayNumber: String(day).padStart(2, '0'),
+    label: '',
+  };
+});
+
+const selectedDate = date || dates[0]?.id || null;
+
+const selectedShowtimes = availableShowtimes.filter(
+  (s) => s.date === selectedDate
+);
+
+const cinemaMap = new Map();
+
+selectedShowtimes.forEach((s) => {
+  const key = `${s.cinemaName}__${s.room}`;
+
+  if (!cinemaMap.has(key)) {
+    cinemaMap.set(key, {
+      id: key,
+      name: s.cinemaName,
+      district: s.cinemaDistance || s.cinemaAddress || '',
+      room: s.room,
+      times: [],
     });
+  }
+
+  const cinema = cinemaMap.get(key);
+
+  cinema.times.push({
+    time: s.startTime,
+    price: s.price,
+    isAvailable: true,
+  });
+});
+
+const cinemas = [...cinemaMap.values()];
+return res.json({
+  success: true,
+  count: availableShowtimes.length,
+  data: {
+    dates,
+    selectedDate,
+    cinemas,
+    list: selectedShowtimes,
+  },
+  showtimes: selectedShowtimes,
+});
   } catch (error) {
     console.error('Lỗi khi lấy danh sách lịch chiếu:', error);
     return res.status(500).json({
@@ -319,7 +400,6 @@ router.get('/', async (req, res) => {
     });
   }
 });
-
 /**
  * 4. GET /api/showtimes/:id
  * Lấy chi tiết một lịch chiếu
@@ -330,11 +410,14 @@ router.get('/:id', async (req, res) => {
     const isMongo = req.app.locals.isMongoConnected;
 
     let showtime = null;
+
     if (isMongo) {
       showtime = await Showtime.findById(id);
     } else {
       showtime = inMemoryShowtimes.find(
-        (s) => s._id?.toString() === id || s.id?.toString() === id
+        (s) =>
+          String(s._id) === String(id) ||
+          String(s.id) === String(id)
       );
     }
 
@@ -350,18 +433,15 @@ router.get('/:id', async (req, res) => {
       data: showtime,
     });
   } catch (error) {
+    console.error('Lỗi khi lấy chi tiết lịch chiếu:', error);
+
     return res.status(500).json({
       success: false,
-      message: 'Lỗi máy chủ khi lấy chi tiết lịch chiếu.',
+      message: 'Lỗi khi lấy chi tiết lịch chiếu.',
       error: error.message,
     });
   }
 });
-
-/**
- * 5. PUT /api/showtimes/:id
- * Chỉnh sửa lịch chiếu (kiểm tra lại xung đột, loại trừ chính ID đang sửa)
- */
 router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
