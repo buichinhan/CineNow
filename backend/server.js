@@ -7,7 +7,7 @@ const mongoose = require('mongoose');
 const Movie = require('./models/Movie');
 const Cinema = require('./models/Cinema');
 const Booking = require('./models/Booking');
-
+const jwt = require('jsonwebtoken');
 const movieRoutes = require('./routes/movieRoutes');
 const authRoutes = require('./routes/auth');
 const showtimeRoutes = require('./routes/showtimeRoutes');
@@ -235,7 +235,70 @@ app.get('/api/seats', async (req, res) => {
 });
 
 // ====================== BOOKINGS API ======================
+app.get('/api/bookings', async (req, res) => {
+  try {
+    const authorization = req.headers.authorization || '';
 
+    if (!authorization.startsWith('Bearer ')) {
+      return res.status(401).json({
+        success: false,
+        message: 'Bạn cần đăng nhập để xem vé.',
+      });
+    }
+
+    const token = authorization.slice(7).trim();
+
+    if (!token || !process.env.JWT_SECRET) {
+      return res.status(401).json({
+        success: false,
+        message: 'Phiên đăng nhập không hợp lệ.',
+      });
+    }
+
+    let decoded;
+
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (error) {
+      return res.status(401).json({
+        success: false,
+        message: 'Phiên đăng nhập đã hết hạn hoặc không hợp lệ.',
+      });
+    }
+
+    if (!decoded.userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Không xác định được tài khoản.',
+      });
+    }
+
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: 'Cơ sở dữ liệu tạm thời không khả dụng.',
+      });
+    }
+
+    const bookings = await Booking.find({
+      userId: decoded.userId,
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return res.json({
+      success: true,
+      data: bookings,
+    });
+  } catch (error) {
+    console.error('Lỗi lấy lịch sử vé:', error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Không thể tải lịch sử đặt vé.',
+    });
+  }
+});
 app.post('/api/bookings', async (req, res) => {
   try {
     const {
