@@ -1,14 +1,4 @@
-import { Platform } from 'react-native';
-
-// Tự động nhận diện môi trường:
-// - Khi chạy trên Web (trình duyệt máy tính): dùng localhost:3000
-// - Khi chạy trên Điện thoại (Expo Go): dùng IP mạng LAN 192.168.1.13
-export const SERVER_IP = '192.168.1.13';
-export const API_BASE_URL =
-  Platform.OS === 'web'
-    ? 'http://localhost:3000/api'
-    : `http://${SERVER_IP}:3000/api`;
-
+import { API_BASE_URL } from './apiConfig';
 /**
  * Gọi API lấy dữ liệu Trang Chủ
  */
@@ -90,6 +80,36 @@ export async function createBooking(bookingPayload) {
     console.warn('Lỗi gọi API /bookings:', error.message);
     throw error;
   }
+}
+/**
+ * Lấy danh sách vé của tài khoản đang đăng nhập.
+ */
+export async function getMyBookings(token) {
+  if (!token) {
+    throw new Error('Bạn cần đăng nhập để xem vé.');
+  }
+
+  const response = await fetch(`${API_BASE_URL}/bookings`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/json',
+    },
+  });
+
+  const result = await response.json();
+
+  if (!response.ok || !result.success) {
+    throw new Error(
+      result.message || 'Không thể tải lịch sử đặt vé.'
+    );
+  }
+
+  if (!Array.isArray(result.data)) {
+    throw new Error('Dữ liệu lịch sử vé không hợp lệ.');
+  }
+
+  return result.data;
 }
 
 // =========================================================================
@@ -182,7 +202,6 @@ export async function deleteShowtimeApi(id) {
 }
 
 /**
- * Gọi API lấy danh sách lịch chiếu phục vụ quản lý (Management view)
  * @param {Object} filters { movieId, cinemaName, date, room, status }
  */
 export async function fetchShowtimesManagement(filters = {}) {
@@ -196,4 +215,33 @@ export async function fetchShowtimesManagement(filters = {}) {
     console.warn('Lỗi lấy danh sách quản lý lịch chiếu:', error.message);
     throw error;
   }
+}
+export async function cancelBooking(ticketId, token) {
+  if (!ticketId || !token) {
+    throw new Error('Thiếu thông tin vé hoặc phiên đăng nhập.');
+  }
+
+  const response = await fetch(
+    `${API_BASE_URL}/bookings/${encodeURIComponent(ticketId)}/cancel`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json',
+      },
+    }
+  );
+  const contentType = response.headers.get('content-type') || '';
+
+  if (!contentType.includes('application/json')) {
+    throw new Error(
+      `Máy chủ trả về dữ liệu không hợp lệ (HTTP ${response.status}).`
+    );
+  }
+  const result = await response.json();
+
+  if (!response.ok || !result.success) {
+    throw new Error(result.message || 'Không thể hủy vé.');
+  }
+  return result.data;
 }

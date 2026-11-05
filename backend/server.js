@@ -334,6 +334,139 @@ return res.json({
     });
   }
 });
+
+// ====================== CANCEL BOOKING API ======================
+app.patch('/api/bookings/:id/cancel', async (req, res) => {
+  try {
+    const authorization = req.headers.authorization || '';
+
+    if (!authorization.startsWith('Bearer ')) {
+      return res.status(401).json({
+        success: false,
+        message: 'Bạn cần đăng nhập để hủy vé.',
+      });
+    }
+
+    const token = authorization.slice(7).trim();
+
+    if (!token || !process.env.JWT_SECRET) {
+      return res.status(401).json({
+        success: false,
+        message: 'Phiên đăng nhập không hợp lệ.',
+      });
+    }
+
+    let decoded;
+
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (error) {
+      return res.status(401).json({
+        success: false,
+        message: 'Phiên đăng nhập đã hết hạn.',
+      });
+    }
+
+    if (!decoded.userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Không xác định được tài khoản.',
+      });
+    }
+
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Mã định danh vé không hợp lệ.',
+      });
+    }
+
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: 'Cơ sở dữ liệu tạm thời không khả dụng.',
+      });
+    }
+
+    const booking = await Booking.findOne({
+      _id: req.params.id,
+      userId: decoded.userId,
+    });
+
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: 'Không tìm thấy vé thuộc tài khoản của bạn.',
+      });
+    }
+
+    if (booking.status !== 'confirmed') {
+      return res.status(409).json({
+        success: false,
+        message: 'Vé này không còn ở trạng thái có thể hủy.',
+      });
+    }
+
+    // Ngày và giờ chiếu được lưu theo giờ Việt Nam.
+    const showtime = new Date(
+      `${booking.date}T${booking.time}:00+07:00`
+    );
+
+    if (Number.isNaN(showtime.getTime())) {
+      return res.status(422).json({
+        success: false,
+        message: 'Không xác định được thời gian chiếu.',
+      });
+    }
+    const CANCELLATION_CUTOFF_MS = 30 * 60 * 1000;
+    const remainingTime = showtime.getTime() - Date.now();
+    if (remainingTime <= CANCELLATION_CUTOFF_MS) {
+      return res.status(409).json({
+        success: false,
+        message:
+          'Chỉ được hủy vé trước giờ chiếu hơn 30 phút. ' +
+          'Vé đã quá thời hạn cho phép hủy.',
+      });
+    }
+    // Chỉ cập nhật khi trạng thái vẫn là confirmed.
+    const cancelledBooking = await Booking.findOneAndUpdate(
+      {
+        _id: booking._id,
+        userId: decoded.userId,
+        status: 'confirmed',
+      },
+      {
+        $set: { status: 'cancelled' },
+      },
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
+
+    if (!cancelledBooking) {
+      return res.status(409).json({
+        success: false,
+        message: 'Trạng thái vé đã thay đổi. Vui lòng tải lại.',
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Hủy vé thành công.',
+      data: cancelledBooking,
+      refundProcessed: false,
+    });
+  } catch (error) {
+    console.error('Lỗi hủy vé:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Không thể hủy vé lúc này.',
+    });
+  }
+});
+
 app.post('/api/bookings', async (req, res) => {
   try {
     const {
@@ -357,7 +490,6 @@ app.post('/api/bookings', async (req, res) => {
         message: 'Vui lòng chọn ít nhất 1 ghế.',
       });
     }
-
     // Cập nhật trạng thái ghế trong dữ liệu dự phòng.
     const seatLayout = memoryStore.seatLayout;
 
@@ -370,7 +502,6 @@ app.post('/api/bookings', async (req, res) => {
         });
       });
     }
-
     const bookingCode =
       `CN-${Math.floor(100000 + Math.random() * 900000)}`;
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,9 @@ import {
   ScrollView,
   StatusBar,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
+
 import { fetchShowtimes } from './api';
 
 export default function ShowtimeScreen({
@@ -18,63 +20,145 @@ export default function ShowtimeScreen({
 }) {
   const [loading, setLoading] = useState(true);
   const [dates, setDates] = useState([]);
-  const [selectedDate, setSelectedDate] = useState('2026-10-16');
+  const [selectedDate, setSelectedDate] = useState(null);
   const [cinemas, setCinemas] = useState([]);
 
-  // Selected cinema and time
   const [selectedCinema, setSelectedCinema] = useState(null);
-  const [selectedTime, setSelectedTime] = useState('19:00');
-  const [ticketPrice, setTicketPrice] = useState(95000);
+  const [selectedTime, setSelectedTime] = useState(null);
+  const [ticketPrice, setTicketPrice] = useState(0);
+
+  const requestId = useRef(0);
+  const movieId = movie?._id || movie?.id || movie?.slug;
 
   useEffect(() => {
-    loadShowtimes(selectedDate);
-  }, [movie]);
+    let active = true;
+    const currentRequest = ++requestId.current;
 
-  const loadShowtimes = async (date) => {
-    try {
-      setLoading(true);
-      const data = await fetchShowtimes(movie?._id || movie?.slug || 'hanh-tinh-do', date);
-      if (data) {
-        setDates(data.dates || []);
-        setCinemas(data.cinemas || []);
-        if (data.cinemas?.length > 0 && !selectedCinema) {
-          setSelectedCinema(data.cinemas[0]);
-        }
-      }
-    } catch (err) {
-      console.warn('Lỗi gọi API suất chiếu, dùng dữ liệu mẫu:', err.message);
-    } finally {
+    setSelectedDate(null);
+    setSelectedCinema(null);
+    setSelectedTime(null);
+    setTicketPrice(0);
+    setDates([]);
+    setCinemas([]);
+    setLoading(true);
+
+    if (!movieId) {
       setLoading(false);
+      return () => {
+        active = false;
+      };
+    }
+
+    fetchShowtimes(movieId)
+      .then((data) => {
+        if (!active || currentRequest !== requestId.current) return;
+
+        setDates(data?.dates || []);
+        setSelectedDate(data?.selectedDate || null);
+        setCinemas(data?.cinemas || []);
+      })
+      .catch((error) => {
+        if (!active || currentRequest !== requestId.current) return;
+
+        console.warn('Không thể tải suất chiếu:', error.message);
+        Alert.alert('Lỗi', 'Không thể tải lịch chiếu. Vui lòng thử lại.');
+      })
+      .finally(() => {
+        if (active && currentRequest === requestId.current) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [movieId]);
+
+  const handleDateChange = async (dateId) => {
+    if (loading || dateId === selectedDate || !movieId) return;
+
+    const currentRequest = ++requestId.current;
+
+    setSelectedDate(dateId);
+    setSelectedCinema(null);
+    setSelectedTime(null);
+    setTicketPrice(0);
+    setCinemas([]);
+    setLoading(true);
+
+    try {
+      const data = await fetchShowtimes(movieId, dateId);
+
+      if (currentRequest !== requestId.current) return;
+
+      setDates(data?.dates || []);
+      setSelectedDate(data?.selectedDate || dateId);
+      setCinemas(data?.cinemas || []);
+    } catch (error) {
+      if (currentRequest !== requestId.current) return;
+
+      console.warn('Không thể tải suất chiếu:', error.message);
+      Alert.alert('Lỗi', 'Không thể tải suất chiếu của ngày đã chọn.');
+    } finally {
+      if (currentRequest === requestId.current) {
+        setLoading(false);
+      }
     }
   };
 
-  const handleDateChange = (dateId) => {
-    setSelectedDate(dateId);
-    loadShowtimes(dateId);
-  };
-
   const handleSelectTime = (cinema, timeObj) => {
-    if (!timeObj.isAvailable) return;
+    if (loading || !timeObj.isAvailable) return;
+
     setSelectedCinema(cinema);
     setSelectedTime(timeObj.time);
-    setTicketPrice(timeObj.price || 95000);
+    setTicketPrice(Number(timeObj.price) || 0);
   };
 
+  const canContinue =
+    !loading &&
+    !!movieId &&
+    !!selectedDate &&
+    !!selectedCinema &&
+    !!selectedTime &&
+    ticketPrice > 0 &&
+    cinemas.some(
+      (cinema) =>
+        cinema.id === selectedCinema?.id &&
+        cinema.times?.some(
+          (time) =>
+            time.time === selectedTime &&
+            time.isAvailable
+        )
+    );
+
   const handleNext = () => {
+    if (!canContinue) {
+      Alert.alert(
+        'Chưa chọn suất chiếu',
+        'Vui lòng chọn ngày, rạp và giờ chiếu trước khi tiếp tục.'
+      );
+      return;
+    }
+
     const bookingData = {
-      movie: movie || { title: 'Hành Tinh Đỏ' },
-      cinema: selectedCinema || cinemas[0] || { name: 'CineNow Landmark 81' },
-      room: selectedCinema?.room || 'PHÒNG 03',
+      movie,
+      cinema: selectedCinema,
+      room: selectedCinema.room,
       date: selectedDate,
       time: selectedTime,
       basePrice: ticketPrice,
     };
+
     onContinue(bookingData);
   };
 
-  const activeDateObj = dates.find((d) => d.id === selectedDate) || dates[0];
-  const dateDisplay = activeDateObj ? `${activeDateObj.dayNumber}.10.2026` : '16.10.2026';
+  const activeDateObj = dates.find(
+    (date) => date.id === selectedDate
+  );
 
+  const dateDisplay = selectedDate
+    ? selectedDate.split('-').reverse().join('.')
+    : '';
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0B0B0B" />
@@ -166,6 +250,13 @@ export default function ShowtimeScreen({
         ) : (
           /* Cinemas and Showtimes list */
           <View style={styles.cinemasList}>
+            {cinemas.length === 0 && (
+  <View style={styles.loadingBox}>
+    <Text style={styles.loadingText}>
+      Hiện chưa có suất chiếu cho ngày này.
+    </Text>
+  </View>
+)}
             {cinemas.map((cinema) => (
               <View key={cinema.id} style={styles.cinemaBlock}>
                 {/* Cinema Header */}
@@ -242,10 +333,14 @@ export default function ShowtimeScreen({
         </View>
 
         <TouchableOpacity
-          style={styles.continueButton}
-          activeOpacity={0.85}
-          onPress={handleNext}
-        >
+  style={[
+    styles.continueButton,
+    !canContinue && { opacity: 0.45 },
+  ]}
+  activeOpacity={0.85}
+  disabled={!canContinue}
+  onPress={handleNext}
+>
           <Text style={styles.continueButtonText}>Tiếp tục chọn ghế</Text>
         </TouchableOpacity>
       </View>

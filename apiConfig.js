@@ -1,4 +1,4 @@
 import { Platform } from 'react-native';
 
-// Backend CineNow trên Render để cả nhóm sử dụng chung
-export const API_BASE_URL = 'https://cinenow-backend.onrender.com/api';
+// Backend CineNow chính xác trên Render của nhóm
+export const API_BASE_URL = 'https://cinenow-backend-9on6.onrender.com/api';
