@@ -13,6 +13,8 @@ const {
   validateMovieData,
   validateCinemaAndRoomData,
   detectShowtimeConflict,
+  suggestNextAvailableSlot,
+  getRoomScheduleTimeline,
 } = require('../services/showtimeService');
 
 const { SHOWTIME_DATES, SHOWTIME_CINEMAS } = require('../seedData');
@@ -98,6 +100,20 @@ router.post('/check-conflict', async (req, res) => {
       existingShowtimes,
     });
 
+    let suggestion = null;
+    if (conflictResult.hasConflict) {
+      suggestion = suggestNextAvailableSlot({
+        cinemaName: normalizedRoom.cinemaName,
+        room: normalizedRoom.room,
+        date: normalizedRoom.date,
+        durationMinutes,
+        bufferMinutes,
+        afterMinutes: conflictResult.conflictingEndMinutes,
+        existingShowtimes,
+        excludeShowtimeId,
+      });
+    }
+
     return res.json({
       success: true,
       hasConflict: conflictResult.hasConflict,
@@ -113,6 +129,8 @@ router.post('/check-conflict', async (req, res) => {
         bufferMinutes,
       },
       overlapDetails: conflictResult.overlapDetails || null,
+      suggestedSlot: suggestion?.found ? suggestion : null,
+      suggestedStartTime: suggestion?.found ? suggestion.suggestedStartTime : null,
     });
   } catch (error) {
     console.error('Lỗi khi kiểm tra xung đột lịch chiếu:', error);
@@ -188,11 +206,23 @@ router.post('/', async (req, res) => {
 
     // Nếu phát hiện trùng phòng chiếu & trùng thời gian -> Từ chối tạo và báo lỗi 409
     if (conflict.hasConflict) {
+      const suggestion = suggestNextAvailableSlot({
+        cinemaName: norm.cinemaName,
+        room: norm.room,
+        date: norm.date,
+        durationMinutes: movie.durationMinutes,
+        bufferMinutes,
+        afterMinutes: conflict.conflictingEndMinutes,
+        existingShowtimes,
+      });
+
       return res.status(409).json({
         success: false,
         code: 'SHOWTIME_CONFLICT',
         message: conflict.reason,
         overlapDetails: conflict.overlapDetails,
+        suggestedSlot: suggestion?.found ? suggestion : null,
+        suggestedStartTime: suggestion?.found ? suggestion.suggestedStartTime : null,
       });
     }
 
@@ -380,13 +410,24 @@ selectedShowtimes.forEach((s) => {
 });
 
 const cinemas = [...cinemaMap.values()];
+
+let finalDates = dates;
+let finalCinemas = cinemas;
+let finalSelectedDate = selectedDate;
+
+if (finalCinemas.length === 0 && (!manage || manage === 'false')) {
+  finalDates = SHOWTIME_DATES;
+  finalCinemas = SHOWTIME_CINEMAS;
+  finalSelectedDate = date || SHOWTIME_DATES[0]?.id;
+}
+
 return res.json({
   success: true,
-  count: availableShowtimes.length,
+  count: finalCinemas.length > 0 ? (availableShowtimes.length || finalCinemas.length) : 0,
   data: {
-    dates,
-    selectedDate,
-    cinemas,
+    dates: finalDates,
+    selectedDate: finalSelectedDate,
+    cinemas: finalCinemas,
     list: selectedShowtimes,
   },
   showtimes: selectedShowtimes,
@@ -400,8 +441,52 @@ return res.json({
     });
   }
 });
+
 /**
- * 4. GET /api/showtimes/:id
+ * 4. GET /api/showtimes/timeline
+ * Xem toàn bộ lịch phòng chiếu trong ngày (ca bận và ca trống)
+ */
+router.get('/timeline', async (req, res) => {
+  try {
+    const { cinemaName, room, date } = req.query;
+    if (!cinemaName || !room || !date) {
+      return res.status(400).json({
+        success: false,
+        message: 'Vui lòng cung cấp đầy đủ cinemaName, room và date (YYYY-MM-DD).',
+      });
+    }
+
+    const isMongo = req.app.locals.isMongoConnected;
+    const existingShowtimes = await getExistingShowtimes({
+      date: date.trim(),
+      cinemaName: cinemaName.trim(),
+      room: room.trim(),
+      isMongoConnected: isMongo,
+    });
+
+    const timeline = getRoomScheduleTimeline({
+      cinemaName,
+      room,
+      date: date.trim(),
+      existingShowtimes,
+    });
+
+    return res.json({
+      success: true,
+      data: timeline,
+    });
+  } catch (error) {
+    console.error('Lỗi khi lấy timeline phòng chiếu:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Lỗi máy chủ khi lấy timeline phòng chiếu.',
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * 5. GET /api/showtimes/:id
  * Lấy chi tiết một lịch chiếu
  */
 router.get('/:id', async (req, res) => {
@@ -529,11 +614,24 @@ router.put('/:id', async (req, res) => {
     });
 
     if (conflict.hasConflict) {
+      const suggestion = suggestNextAvailableSlot({
+        cinemaName: norm.cinemaName,
+        room: norm.room,
+        date: norm.date,
+        durationMinutes: movie.durationMinutes,
+        bufferMinutes,
+        afterMinutes: conflict.conflictingEndMinutes,
+        existingShowtimes,
+        excludeShowtimeId: id,
+      });
+
       return res.status(409).json({
         success: false,
         code: 'SHOWTIME_CONFLICT',
         message: conflict.reason,
         overlapDetails: conflict.overlapDetails,
+        suggestedSlot: suggestion?.found ? suggestion : null,
+        suggestedStartTime: suggestion?.found ? suggestion.suggestedStartTime : null,
       });
     }
 

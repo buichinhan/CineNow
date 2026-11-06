@@ -106,6 +106,12 @@ export default function MyTicketsScreen({ onBack }) {
           {item.room} · Ghế {item.seats.join(', ')}
         </Text>
 
+        {Array.isArray(item.concessions) && item.concessions.length > 0 && (
+          <Text style={styles.concessionBadgeText}>
+            🍿 +{item.concessions.reduce((acc, c) => acc + (c.quantity || 1), 0)} bắp nước & snack
+          </Text>
+        )}
+
         <Text style={styles.price}>
           {formatPrice(item.totalPrice)}
         </Text>
@@ -431,6 +437,13 @@ const styles = StyleSheet.create({
     color: '#A6A6A6',
     fontSize: 11,
     lineHeight: 18,
+  },
+
+  concessionBadgeText: {
+    color: '#EAB308',
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 4,
   },
 
   price: {

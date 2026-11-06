@@ -16,6 +16,7 @@ const {
   INITIAL_MOVIES,
   INITIAL_CINEMAS,
   INITIAL_SEAT_LAYOUT,
+  INITIAL_CONCESSIONS,
 } = require('./seedData');
 
 // ====================== APP CONFIGURATION ======================
@@ -47,6 +48,7 @@ const memoryStore = {
   })),
 
   seatLayout: JSON.parse(JSON.stringify(INITIAL_SEAT_LAYOUT)),
+  concessions: [...INITIAL_CONCESSIONS],
   bookings: [],
 };
 
@@ -234,6 +236,28 @@ app.get('/api/seats', async (req, res) => {
   }
 });
 
+// ====================== CONCESSIONS (BẮP NƯỚC & SNACK) API ======================
+app.get('/api/concessions', (req, res) => {
+  try {
+    const { category } = req.query;
+    let list = memoryStore.concessions || INITIAL_CONCESSIONS;
+    if (category && category !== 'all') {
+      list = list.filter((item) => item.category === category);
+    }
+    return res.json({
+      success: true,
+      count: list.length,
+      data: list,
+    });
+  } catch (error) {
+    console.error('Lỗi lấy danh mục bắp nước:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Không thể tải danh sách bắp nước và snack.',
+    });
+  }
+});
+
 // ====================== BOOKINGS API ======================
 app.get('/api/bookings', async (req, res) => {
   try {
@@ -344,6 +368,9 @@ app.post('/api/bookings', async (req, res) => {
       date,
       time,
       seats,
+      seatTotal,
+      concessions = [],
+      concessionsTotal,
       totalPrice,
     } = req.body;
 
@@ -374,6 +401,22 @@ app.post('/api/bookings', async (req, res) => {
     const bookingCode =
       `CN-${Math.floor(100000 + Math.random() * 900000)}`;
 
+    const calcConcessionsTotal = Array.isArray(concessions)
+      ? concessions.reduce(
+          (acc, item) => acc + (Number(item.price) || 0) * (Number(item.quantity) || 1),
+          0
+        )
+      : 0;
+
+    const finalConcessionsTotal =
+      concessionsTotal !== undefined ? Number(concessionsTotal) : calcConcessionsTotal;
+    const finalSeatTotal =
+      seatTotal !== undefined ? Number(seatTotal) : (Number(totalPrice) || 0) - finalConcessionsTotal;
+    const finalTotalPrice =
+      totalPrice !== undefined
+        ? Number(totalPrice)
+        : finalSeatTotal + finalConcessionsTotal;
+
     const newBooking = {
       id: `booking_${Date.now()}`,
       bookingCode,
@@ -384,7 +427,10 @@ app.post('/api/bookings', async (req, res) => {
       date: date || '16.10.2026',
       time: time || '19:00',
       seats,
-      totalPrice,
+      seatTotal: Math.max(0, finalSeatTotal),
+      concessions: Array.isArray(concessions) ? concessions : [],
+      concessionsTotal: finalConcessionsTotal,
+      totalPrice: finalTotalPrice,
       status: 'confirmed',
       createdAt: new Date().toISOString(),
     };
@@ -487,10 +533,14 @@ mongoose.connection.on('connected', () => {
 
 // ====================== START SERVER ======================
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`CineNow API đang chạy trên cổng ${PORT}.`);
-  console.log(`Health check: /api/health`);
-});
+if (require.main === module) {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`CineNow API đang chạy trên cổng ${PORT}.`);
+    console.log(`Health check: /api/health`);
+  });
 
-// Khởi động kết nối database sau khi mở HTTP server.
-connectDatabase();
+  // Khởi động kết nối database sau khi mở HTTP server.
+  connectDatabase();
+}
+
+module.exports = app;

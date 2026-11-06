@@ -37,6 +37,23 @@ const bookingSchema = new mongoose.Schema(
         required: true,
       },
     ],
+    seatTotal: {
+      type: Number,
+      default: 0,
+    },
+    concessions: [
+      {
+        id: { type: String, required: true },
+        name: { type: String, required: true },
+        price: { type: Number, required: true },
+        quantity: { type: Number, required: true },
+        category: { type: String },
+      },
+    ],
+    concessionsTotal: {
+      type: Number,
+      default: 0,
+    },
     totalPrice: {
       type: Number,
       required: true,

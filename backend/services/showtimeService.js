@@ -292,6 +292,7 @@ function detectShowtimeConflict({
       return {
         hasConflict: true,
         conflictingShowtime: show,
+        conflictingEndMinutes: existingEnd,
         reason:
           `Xung đột lịch chiếu: Phòng "${room}" tại rạp "${cinemaName}" đã được xếp lịch cho phim ` +
           `"${show.movieTitle || 'Chưa đặt tên'}" từ ${existingStartTimeStr} đến ${existingEndTimeStr} ` +
@@ -310,7 +311,187 @@ function detectShowtimeConflict({
   return {
     hasConflict: false,
     conflictingShowtime: null,
+    conflictingEndMinutes: null,
     reason: null,
+  };
+}
+
+/**
+ * 9. Gợi ý khung giờ khả dụng tiếp theo (Next Available Slot Suggester)
+ * Khi có xung đột phòng chiếu, hàm này tìm khung giờ sớm nhất còn trống trong ngày
+ * đáp ứng đủ thời lượng phim + thời gian đệm (buffer).
+ */
+function suggestNextAvailableSlot({
+  cinemaName,
+  room,
+  date,
+  durationMinutes,
+  bufferMinutes = DEFAULT_BUFFER_MINUTES,
+  afterMinutes = null,
+  existingShowtimes = [],
+  excludeShowtimeId = null,
+}) {
+  const normalizedCinema = cinemaName.trim().toLowerCase();
+  const normalizedRoom = room.trim().toUpperCase();
+  const totalOccupied = durationMinutes + bufferMinutes;
+
+  // Lọc các suất chiếu cùng ngày, cùng rạp, cùng phòng và chưa bị hủy
+  const sameRoomShows = existingShowtimes
+    .filter((show) => {
+      const showId = show._id?.toString() || show.id?.toString();
+      if (excludeShowtimeId && showId === excludeShowtimeId.toString()) return false;
+      if (show.status === 'cancelled') return false;
+      if (show.date !== date) return false;
+      if ((show.cinemaName || '').trim().toLowerCase() !== normalizedCinema) return false;
+      if ((show.room || '').trim().toUpperCase() !== normalizedRoom) return false;
+      return true;
+    })
+    .map((show) => {
+      let start = 0;
+      let end = 0;
+      if (show.startTime) {
+        start = timeToMinutes(show.startTime);
+        if (show.endTime) {
+          end = timeToMinutes(show.endTime);
+        } else {
+          const dur = parseDurationMinutes(show.durationMinutes || 120);
+          const buf = show.bufferMinutes || DEFAULT_BUFFER_MINUTES;
+          end = start + dur + buf;
+        }
+      }
+      return { ...show, startMinutes: start, endMinutes: end };
+    })
+    .sort((a, b) => a.startMinutes - b.startMinutes);
+
+  // Bắt đầu tìm kiếm từ sau mốc afterMinutes hoặc 08:00 (480 phút)
+  const searchStart = afterMinutes !== null ? Math.max(0, afterMinutes) : 480; // 08:00
+  const maxDayMinutes = 1410; // Không quá 23:30
+
+  let candidate = searchStart;
+
+  while (candidate + totalOccupied <= maxDayMinutes) {
+    let conflict = false;
+    let nextPossible = candidate + 5;
+
+    for (const show of sameRoomShows) {
+      if (isTimeOverlapping(candidate, candidate + totalOccupied, show.startMinutes, show.endMinutes)) {
+        conflict = true;
+        if (show.endMinutes > nextPossible) {
+          nextPossible = show.endMinutes;
+        }
+      }
+    }
+
+    if (!conflict) {
+      const suggestedStartTime = minutesToTime(candidate);
+      const suggestedEndTime = minutesToTime(candidate + totalOccupied);
+      return {
+        found: true,
+        suggestedStartTime,
+        suggestedEndTime,
+        startMinutes: candidate,
+        endMinutes: candidate + totalOccupied,
+        durationMinutes,
+        bufferMinutes,
+      };
+    }
+
+    candidate = nextPossible;
+  }
+
+  return {
+    found: false,
+    message: `Không tìm thấy khung giờ trống phù hợp trong ngày ${date} cho phòng "${room}".`,
+  };
+}
+
+/**
+ * 10. Lấy toàn bộ timeline lịch phòng chiếu (Busy & Free Slots)
+ */
+function getRoomScheduleTimeline({
+  cinemaName,
+  room,
+  date,
+  existingShowtimes = [],
+  dayStartMinutes = 480, // 08:00
+  dayEndMinutes = 1410,  // 23:30
+}) {
+  const normalizedCinema = cinemaName.trim().toLowerCase();
+  const normalizedRoom = room.trim().toUpperCase();
+
+  const busySlots = existingShowtimes
+    .filter((show) => {
+      if (show.status === 'cancelled') return false;
+      if (show.date !== date) return false;
+      if ((show.cinemaName || '').trim().toLowerCase() !== normalizedCinema) return false;
+      if ((show.room || '').trim().toUpperCase() !== normalizedRoom) return false;
+      return true;
+    })
+    .map((show) => {
+      let start = 0;
+      let end = 0;
+      if (show.startTime) {
+        start = timeToMinutes(show.startTime);
+        if (show.endTime) {
+          end = timeToMinutes(show.endTime);
+        } else {
+          const dur = parseDurationMinutes(show.durationMinutes || 120);
+          const buf = show.bufferMinutes || DEFAULT_BUFFER_MINUTES;
+          end = start + dur + buf;
+        }
+      }
+      return {
+        id: show._id?.toString() || show.id,
+        movieTitle: show.movieTitle || 'Phim',
+        startTime: show.startTime || minutesToTime(start),
+        endTime: show.endTime || minutesToTime(end),
+        startMinutes: start,
+        endMinutes: end,
+        durationMinutes: show.durationMinutes || 120,
+        bufferMinutes: show.bufferMinutes || DEFAULT_BUFFER_MINUTES,
+      };
+    })
+    .sort((a, b) => a.startMinutes - b.startMinutes);
+
+  const freeSlots = [];
+  let pointer = dayStartMinutes;
+
+  for (const busy of busySlots) {
+    if (busy.startMinutes > pointer) {
+      const freeDur = busy.startMinutes - pointer;
+      if (freeDur >= 30) {
+        freeSlots.push({
+          startTime: minutesToTime(pointer),
+          endTime: minutesToTime(busy.startMinutes),
+          startMinutes: pointer,
+          endMinutes: busy.startMinutes,
+          availableMinutes: freeDur,
+        });
+      }
+    }
+    pointer = Math.max(pointer, busy.endMinutes);
+  }
+
+  if (pointer < dayEndMinutes) {
+    const freeDur = dayEndMinutes - pointer;
+    if (freeDur >= 30) {
+      freeSlots.push({
+        startTime: minutesToTime(pointer),
+        endTime: minutesToTime(dayEndMinutes),
+        startMinutes: pointer,
+        endMinutes: dayEndMinutes,
+        availableMinutes: freeDur,
+      });
+    }
+  }
+
+  return {
+    cinemaName: cinemaName.trim(),
+    room: room.trim().toUpperCase(),
+    date,
+    totalOccupiedShows: busySlots.length,
+    busySlots,
+    freeSlots,
   };
 }
 
@@ -324,4 +505,6 @@ module.exports = {
   validateMovieData,
   validateCinemaAndRoomData,
   detectShowtimeConflict,
+  suggestNextAvailableSlot,
+  getRoomScheduleTimeline,
 };
