@@ -170,6 +170,51 @@ export default function ConcessionsScreen({
   const [cart, setCart] = useState({}); // { [itemId]: quantity }
   const [submitting, setSubmitting] = useState(false);
 
+  // Đếm ngược thời gian giữ ghế
+  const [remainingSeconds, setRemainingSeconds] = useState(
+    bookingData?.remainingSeconds ||
+      (bookingData?.holdExpiresAt
+        ? Math.max(0, Math.round((bookingData.holdExpiresAt - Date.now()) / 1000))
+        : 300)
+  );
+
+  useEffect(() => {
+    if (remainingSeconds === null || remainingSeconds <= 0) return;
+
+    const timer = setInterval(() => {
+      setRemainingSeconds((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          handleHoldExpired();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [remainingSeconds]);
+
+  const handleHoldExpired = () => {
+    Alert.alert(
+      'Hết thời gian giữ ghế! ⏳',
+      'Đã hết thời gian giữ ghế (5 phút). Các ghế của bạn đã được tự động giải phóng.',
+      [
+        {
+          text: 'Quay lại chọn ghế',
+          onPress: () => onBack && onBack(),
+        },
+      ]
+    );
+  };
+
+  const formatCountdown = (totalSeconds) => {
+    if (!totalSeconds || totalSeconds <= 0) return '00:00';
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
+
   useEffect(() => {
     loadConcessions();
   }, []);
@@ -266,6 +311,7 @@ export default function ConcessionsScreen({
         concessions: finalConcessions,
         concessionsTotal: finalConcessionsTotal,
         totalPrice: finalGrandTotal,
+        holdToken: bookingData?.holdToken,
       };
 
       const res = await createBooking(payload);
@@ -331,6 +377,22 @@ export default function ConcessionsScreen({
           <Text style={styles.stepText}>Vé QR</Text>
         </View>
       </View>
+
+      {/* Countdown Timer Banner */}
+      {remainingSeconds !== null && remainingSeconds > 0 && (
+        <View style={styles.holdTimerBanner}>
+          <Text style={styles.holdTimerIcon}>⏳</Text>
+          <View style={styles.holdTimerTextContainer}>
+            <Text style={styles.holdTimerTitle}>ĐANG GIỮ GHẾ TẠM THỜI</Text>
+            <Text style={styles.holdTimerSubtitle}>
+              Thời gian giữ ghế còn lại:{' '}
+              <Text style={styles.holdTimerHighlight}>
+                {formatCountdown(remainingSeconds)}
+              </Text>
+            </Text>
+          </View>
+        </View>
+      )}
 
       {/* Booking Quick Pill */}
       <View style={styles.pillContainer}>
@@ -556,6 +618,41 @@ const styles = StyleSheet.create({
     height: 2,
     backgroundColor: '#E50914',
     borderRadius: 1,
+  },
+  holdTimerBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#271708',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    borderRadius: 10,
+    marginHorizontal: 16,
+    marginTop: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  holdTimerIcon: {
+    fontSize: 18,
+    marginRight: 10,
+  },
+  holdTimerTextContainer: {
+    flex: 1,
+  },
+  holdTimerTitle: {
+    color: '#F59E0B',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  holdTimerSubtitle: {
+    color: '#D4D4D8',
+    fontSize: 12,
+    marginTop: 1,
+  },
+  holdTimerHighlight: {
+    color: '#F59E0B',
+    fontWeight: 'bold',
+    fontSize: 13,
   },
   pillContainer: {
     paddingHorizontal: 16,
