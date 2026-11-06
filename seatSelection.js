@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import { fetchSeats, createBooking } from './api';
+import { fetchSeats, holdSeatsApi, releaseSeatsApi, createBooking } from './api';
 
 export default function SeatSelectionScreen({
   movie,
@@ -21,8 +21,17 @@ export default function SeatSelectionScreen({
 }) {
   const [loading, setLoading] = useState(true);
   const [seatLayout, setSeatLayout] = useState(null);
-  const [selectedSeats, setSelectedSeats] = useState(['B5', 'B6', 'D3', 'D4']);
+  const [selectedSeats, setSelectedSeats] = useState(
+    Array.isArray(bookingData?.selectedSeats) ? bookingData.selectedSeats : ['B5', 'B6']
+  );
   const [submitting, setSubmitting] = useState(false);
+
+  // Quản lý giữ ghế tạm thời (Temporary Seat Hold)
+  const [holdToken, setHoldToken] = useState(bookingData?.holdToken || null);
+  const [holdExpiresAt, setHoldExpiresAt] = useState(bookingData?.holdExpiresAt || null);
+  const [remainingSeconds, setRemainingSeconds] = useState(
+    bookingData?.remainingSeconds || null
+  );
 
   const movieTitle = movie?.title || bookingData?.movie?.title || 'Hành Tinh Đỏ';
   const cinemaName = bookingData?.cinema?.name || 'CineNow Landmark 81';
@@ -34,6 +43,49 @@ export default function SeatSelectionScreen({
     loadSeats();
   }, []);
 
+  // Đếm ngược thời gian giữ ghế
+  useEffect(() => {
+    if (remainingSeconds === null || remainingSeconds <= 0) return;
+
+    const timer = setInterval(() => {
+      setRemainingSeconds((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          handleHoldExpired();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [remainingSeconds]);
+
+  const handleHoldExpired = () => {
+    Alert.alert(
+      'Hết thời gian giữ ghế! ⏳',
+      'Đã hết thời gian giữ ghế tạm thời (5 phút). Các ghế bạn đang chọn đã được tự động giải phóng để nhường cho khách hàng khác.',
+      [
+        {
+          text: 'Chọn lại ghế',
+          onPress: () => {
+            setSelectedSeats([]);
+            setHoldToken(null);
+            setRemainingSeconds(null);
+            loadSeats();
+          },
+        },
+      ]
+    );
+  };
+
+  const formatCountdown = (totalSeconds) => {
+    if (!totalSeconds || totalSeconds <= 0) return '00:00';
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
+
   const loadSeats = async () => {
     try {
       setLoading(true);
@@ -41,10 +93,16 @@ export default function SeatSelectionScreen({
         movie?._id || movie?.slug || 'hanh-tinh-do',
         cinemaName,
         showDate,
-        showTime
+        showTime,
+        holdToken,
+        roomName
       );
       if (data && data.seatLayout) {
         setSeatLayout(data.seatLayout);
+        if (data.activeHold?.remainingSeconds) {
+          setRemainingSeconds(data.activeHold.remainingSeconds);
+          setHoldExpiresAt(data.activeHold.expiresAt);
+        }
       }
     } catch (err) {
       console.warn('Lỗi tải sơ đồ ghế từ API:', err.message);
@@ -55,7 +113,19 @@ export default function SeatSelectionScreen({
 
   // Toggle seat selection
   const handleToggleSeat = (seat, row) => {
-    if (seat.status === 'booked') return;
+    if (seat.status === 'booked') {
+      Alert.alert('Ghế đã đặt', 'Ghế này đã được bán thành công.');
+      return;
+    }
+
+    // Ghế đang bị người khác giữ tạm
+    if (seat.status === 'holding' && !selectedSeats.includes(seat.id) && !seat.isMine) {
+      Alert.alert(
+        'Ghế đang giữ 🔒',
+        'Ghế này đang được một khách hàng khác giữ tạm để thanh toán. Vui lòng chọn ghế khác hoặc chờ ít phút.'
+      );
+      return;
+    }
 
     if (selectedSeats.includes(seat.id)) {
       setSelectedSeats(selectedSeats.filter((id) => id !== seat.id));
@@ -80,26 +150,64 @@ export default function SeatSelectionScreen({
 
   const totalPrice = calculateTotal();
 
-  const handleProceed = () => {
+  const handleProceed = async () => {
     if (selectedSeats.length === 0) {
       Alert.alert('Thông báo', 'Vui lòng chọn ít nhất 1 ghế để tiếp tục.');
       return;
     }
 
-    if (onContinue) {
-      onContinue({
-        movie: movie || bookingData?.movie,
-        bookingData,
-        selectedSeats,
-        seatTotal: totalPrice,
-      });
-      return;
-    }
+    try {
+      setSubmitting(true);
 
-    handleConfirmBooking();
+      // Gọi API giữ ghế tạm thời (Kiểm soát đồng thời)
+      const res = await holdSeatsApi({
+        cinemaName,
+        room: roomName,
+        date: showDate,
+        time: showTime,
+        seats: selectedSeats,
+        holdToken,
+        userId: user?._id || user?.id,
+        durationSeconds: 300,
+      });
+
+      const newHoldToken = res.data?.holdToken || holdToken;
+      const newExpiresAt = res.data?.expiresAt || Date.now() + 300000;
+      const newRemaining = res.data?.remainingSeconds || 300;
+
+      setHoldToken(newHoldToken);
+      setHoldExpiresAt(newExpiresAt);
+      setRemainingSeconds(newRemaining);
+
+      if (onContinue) {
+        onContinue({
+          movie: movie || bookingData?.movie,
+          bookingData,
+          selectedSeats,
+          seatTotal: totalPrice,
+          holdToken: newHoldToken,
+          holdExpiresAt: newExpiresAt,
+          remainingSeconds: newRemaining,
+        });
+      } else {
+        handleConfirmBooking(newHoldToken);
+      }
+    } catch (err) {
+      // Xử lý khi có người khác vừa giữ hoặc đặt ghế này trước
+      Alert.alert(
+        'Không thể giữ ghế ⚠️',
+        err.message || 'Ghế bạn chọn đang được người khác giữ hoặc đã bán. Vui lòng chọn lại.'
+      );
+      loadSeats();
+      if (err.conflictingSeats && Array.isArray(err.conflictingSeats)) {
+        setSelectedSeats((prev) => prev.filter((id) => !err.conflictingSeats.includes(id)));
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleConfirmBooking = async () => {
+  const handleConfirmBooking = async (token = holdToken) => {
     if (selectedSeats.length === 0) {
       Alert.alert('Thông báo', 'Vui lòng chọn ít nhất 1 ghế để tiếp tục.');
       return;
@@ -108,13 +216,16 @@ export default function SeatSelectionScreen({
     try {
       setSubmitting(true);
       const payload = {
+        userId: user?._id || user?.id,
         movieTitle,
         cinemaName,
         room: roomName,
         date: showDate,
         time: showTime,
         seats: selectedSeats,
+        seatTotal: totalPrice,
         totalPrice,
+        holdToken: token,
       };
 
       const res = await createBooking(payload);
@@ -139,6 +250,7 @@ export default function SeatSelectionScreen({
   const getSeatColor = (seat, row, isSelected) => {
     if (isSelected) return '#E50914';
     if (seat.status === 'booked') return '#18181B';
+    if (seat.status === 'holding' && !seat.isMine) return '#F59E0B'; // Đang giữ bởi người khác
     if (row.type === 'vip') return '#EAB308';
     if (row.type === 'sweetbox') return '#881337';
     return '#3F3F46'; // standard
@@ -179,6 +291,22 @@ export default function SeatSelectionScreen({
         </View>
       </View>
 
+      {/* Countdown Timer Banner khi đang giữ ghế */}
+      {remainingSeconds !== null && remainingSeconds > 0 && (
+        <View style={styles.holdTimerBanner}>
+          <Text style={styles.holdTimerIcon}>⏳</Text>
+          <View style={styles.holdTimerTextContainer}>
+            <Text style={styles.holdTimerTitle}>ĐANG GIỮ GHẾ TẠM THỜI</Text>
+            <Text style={styles.holdTimerSubtitle}>
+              Ghế sẽ tự giải phóng sau:{' '}
+              <Text style={styles.holdTimerHighlight}>
+                {formatCountdown(remainingSeconds)}
+              </Text>
+            </Text>
+          </View>
+        </View>
+      )}
+
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -218,6 +346,8 @@ export default function SeatSelectionScreen({
                   {row.seats.map((seat) => {
                     const isSelected = selectedSeats.includes(seat.id);
                     const isBooked = seat.status === 'booked';
+                    const isOtherHolding =
+                      seat.status === 'holding' && !isSelected && !seat.isMine;
                     const bgColor = getSeatColor(seat, row, isSelected);
 
                     if (seat.isDouble) {
@@ -229,6 +359,7 @@ export default function SeatSelectionScreen({
                             styles.doubleSeat,
                             { backgroundColor: bgColor },
                             isSelected && styles.seatBorderSelected,
+                            isOtherHolding && styles.seatBorderHolding,
                           ]}
                           disabled={isBooked}
                           onPress={() => handleToggleSeat(seat, row)}
@@ -240,7 +371,7 @@ export default function SeatSelectionScreen({
                               isSelected && styles.seatNumberTextWhite,
                             ]}
                           >
-                            {seat.number}
+                            {isOtherHolding ? '🔒 ' + seat.number : seat.number}
                           </Text>
                         </TouchableOpacity>
                       );
@@ -253,12 +384,14 @@ export default function SeatSelectionScreen({
                           styles.singleSeat,
                           { backgroundColor: bgColor },
                           isSelected && styles.seatBorderSelected,
+                          isOtherHolding && styles.seatBorderHolding,
                         ]}
                         disabled={isBooked}
                         onPress={() => handleToggleSeat(seat, row)}
                         activeOpacity={0.8}
                       >
                         {isSelected && <Text style={styles.checkIcon}>✓</Text>}
+                        {isOtherHolding && <Text style={styles.holdIcon}>🔒</Text>}
                       </TouchableOpacity>
                     );
                   })}
@@ -278,6 +411,23 @@ export default function SeatSelectionScreen({
             <View style={[styles.legendBox, { backgroundColor: '#EAB308' }]} />
             <Text style={styles.legendText}>VIP</Text>
           </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendBox, { backgroundColor: '#881337' }]} />
+            <Text style={styles.legendText}>Ghế đôi</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendBox, { backgroundColor: '#F59E0B' }]} />
+            <Text style={styles.legendText}>Đang giữ</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendBox, { backgroundColor: '#18181B' }]} />
+            <Text style={styles.legendText}>Đã đặt</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendBox, { backgroundColor: '#E50914' }]} />
+            <Text style={styles.legendText}>Đang chọn</Text>
+          </View>
+        </View>
           <View style={styles.legendItem}>
             <View style={[styles.legendBox, { backgroundColor: '#881337' }]} />
             <Text style={styles.legendText}>Ghế đôi</Text>
@@ -364,6 +514,41 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: '#18181B',
+  },
+  holdTimerBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#271708',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    borderRadius: 10,
+    marginHorizontal: 16,
+    marginTop: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  holdTimerIcon: {
+    fontSize: 18,
+    marginRight: 10,
+  },
+  holdTimerTextContainer: {
+    flex: 1,
+  },
+  holdTimerTitle: {
+    color: '#F59E0B',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  holdTimerSubtitle: {
+    color: '#D4D4D8',
+    fontSize: 12,
+    marginTop: 1,
+  },
+  holdTimerHighlight: {
+    color: '#F59E0B',
+    fontWeight: 'bold',
+    fontSize: 13,
   },
   stepItem: {
     alignItems: 'center',
@@ -496,6 +681,10 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: '#FFFFFF',
   },
+  seatBorderHolding: {
+    borderWidth: 1.5,
+    borderColor: '#F59E0B',
+  },
   seatNumberText: {
     color: '#A1A1AA',
     fontSize: 10,
@@ -509,6 +698,9 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: 'bold',
+  },
+  holdIcon: {
+    fontSize: 11,
   },
   legendContainer: {
     flexDirection: 'row',
