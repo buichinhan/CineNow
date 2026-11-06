@@ -17,6 +17,7 @@ import HomeScreen from './home';
 import MovieDetailScreen from './movieDetail';
 import ShowtimeScreen from './showtime';
 import SeatSelectionScreen from './seatSelection';
+import ConcessionsScreen from './concessions';
 import MovieCatalogScreen from './screens/MovieCatalogScreen';
 import MyTicketsScreen from './screens/MyTicketsScreen';
 
@@ -123,8 +124,17 @@ export default function App() {
       <SeatSelectionScreen
         movie={selectedMovie}
         bookingData={selectedBooking}
+        user={user}
         onBack={() => setCurrentScreen('showtime')}
+        onContinue={(seatData) => {
+          setSelectedBooking((prev) => ({
+            ...prev,
+            ...seatData,
+          }));
+          setCurrentScreen('concessions');
+        }}
         onComplete={() => {
+          setSelectedBooking(null);
           setCurrentScreen('home');
           setActiveTab('tickets');
         }}
@@ -132,7 +142,26 @@ export default function App() {
     );
   }
 
-  // 6. Ứng dụng chính
+  // 6. Màn hình Bắp nước & Snack (Concessions)
+  if (currentScreen === 'concessions') {
+    return (
+      <ConcessionsScreen
+        movie={selectedMovie}
+        bookingData={selectedBooking}
+        selectedSeats={selectedBooking?.selectedSeats || []}
+        seatTotal={selectedBooking?.seatTotal || 0}
+        user={user}
+        onBack={() => setCurrentScreen('seatSelection')}
+        onComplete={(newBooking) => {
+          setSelectedBooking(null);
+          setCurrentScreen('home');
+          setActiveTab('tickets');
+        }}
+      />
+    );
+  }
+
+  // 7. Ứng dụng chính
   if (currentScreen === 'home') {
     return (
       <SafeAreaView style={styles.mainContainer}>

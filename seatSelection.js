@@ -14,7 +14,9 @@ import { fetchSeats, createBooking } from './api';
 export default function SeatSelectionScreen({
   movie,
   bookingData,
+  user,
   onBack,
+  onContinue,
   onComplete,
 }) {
   const [loading, setLoading] = useState(true);
@@ -77,6 +79,25 @@ export default function SeatSelectionScreen({
   };
 
   const totalPrice = calculateTotal();
+
+  const handleProceed = () => {
+    if (selectedSeats.length === 0) {
+      Alert.alert('Thông báo', 'Vui lòng chọn ít nhất 1 ghế để tiếp tục.');
+      return;
+    }
+
+    if (onContinue) {
+      onContinue({
+        movie: movie || bookingData?.movie,
+        bookingData,
+        selectedSeats,
+        seatTotal: totalPrice,
+      });
+      return;
+    }
+
+    handleConfirmBooking();
+  };
 
   const handleConfirmBooking = async () => {
     if (selectedSeats.length === 0) {
@@ -297,7 +318,7 @@ export default function SeatSelectionScreen({
           style={[styles.payButton, submitting && { opacity: 0.6 }]}
           disabled={submitting}
           activeOpacity={0.85}
-          onPress={handleConfirmBooking}
+          onPress={handleProceed}
         >
           {submitting ? (
             <ActivityIndicator color="#FFFFFF" />

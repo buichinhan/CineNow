@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { fetchShowtimes } from './api';
+import ShowtimeConflictModal from './components/ShowtimeConflictModal';
 
 export default function ShowtimeScreen({
   movie,
@@ -25,6 +26,7 @@ export default function ShowtimeScreen({
   const [selectedCinema, setSelectedCinema] = useState(null);
   const [selectedTime, setSelectedTime] = useState('19:00');
   const [ticketPrice, setTicketPrice] = useState(95000);
+  const [conflictModalVisible, setConflictModalVisible] = useState(false);
 
   useEffect(() => {
     loadShowtimes(selectedDate);
@@ -84,6 +86,14 @@ export default function ShowtimeScreen({
         <TouchableOpacity style={styles.backButton} onPress={onBack} activeOpacity={0.7}>
           <Text style={styles.backArrow}>❮</Text>
           <Text style={styles.topBarTitle}>Chọn suất chiếu</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.conflictBtn}
+          onPress={() => setConflictModalVisible(true)}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.conflictBtnText}>⚡ Kiểm tra xung đột</Text>
         </TouchableOpacity>
       </View>
 
@@ -249,6 +259,19 @@ export default function ShowtimeScreen({
           <Text style={styles.continueButtonText}>Tiếp tục chọn ghế</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Modal Kiểm tra xung đột */}
+      <ShowtimeConflictModal
+        visible={conflictModalVisible}
+        movie={movie}
+        defaultCinema={selectedCinema?.name || 'CineNow Landmark 81'}
+        defaultDate={selectedDate}
+        onClose={() => setConflictModalVisible(false)}
+        onApplyShowtime={(time) => {
+          setSelectedTime(time);
+          setConflictModalVisible(false);
+        }}
+      />
     </View>
   );
 }
@@ -260,9 +283,25 @@ const styles = StyleSheet.create({
   },
   topBar: {
     paddingTop: 45,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingBottom: 12,
     backgroundColor: '#0B0B0B',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  conflictBtn: {
+    backgroundColor: '#27272A',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#3F3F46',
+  },
+  conflictBtnText: {
+    color: '#EAB308',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
   backButton: {
     flexDirection: 'row',

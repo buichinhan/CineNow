@@ -12,6 +12,8 @@ const {
   validateMovieData,
   validateCinemaAndRoomData,
   detectShowtimeConflict,
+  suggestNextAvailableSlot,
+  getRoomScheduleTimeline,
 } = require('./services/showtimeService');
 
 const { INITIAL_MOVIES, INITIAL_CINEMAS } = require('./seedData');
@@ -195,6 +197,91 @@ async function runTests() {
       existingShowtimes: existingList,
     });
     assert(selfUpdateCheck.hasConflict === false, 'Hợp lệ: Chỉnh sửa chính nó không bị xung đột với chính nó');
+  }
+
+  // TEST 5: GỢI Ý KHUNG GIỜ KHẢ DỤNG TIẾP THEO (SLOT SUGGESTION)
+  console.log('\n👉 NHÓM 5: Gợi ý khung giờ khả dụng tiếp theo (Slot Suggestion)');
+  {
+    const existingList = [
+      {
+        _id: 'show_001',
+        movieTitle: 'Hành Tinh Đỏ',
+        cinemaName: 'CineNow Landmark 81',
+        room: 'PHÒNG 01',
+        date: '2026-10-16',
+        startTime: '09:00',
+        endTime: '11:23',
+        status: 'scheduled',
+      },
+      {
+        _id: 'show_002',
+        movieTitle: 'Kẻ Giữ Thời Gian',
+        cinemaName: 'CineNow Landmark 81',
+        room: 'PHÒNG 01',
+        date: '2026-10-16',
+        startTime: '14:00',
+        endTime: '16:11',
+        status: 'scheduled',
+      },
+    ];
+
+    // Gợi ý sau khi ca 1 kết thúc lúc 11:23 cho phim thời lượng 105 phút (+ 15p buffer = 120p)
+    const suggestion = suggestNextAvailableSlot({
+      cinemaName: 'CineNow Landmark 81',
+      room: 'PHÒNG 01',
+      date: '2026-10-16',
+      durationMinutes: 105,
+      bufferMinutes: 15,
+      afterMinutes: timeToMinutes('11:23'),
+      existingShowtimes: existingList,
+    });
+
+    assert(suggestion.found === true, 'Tìm thấy khung giờ gợi ý khả dụng');
+    assert(suggestion.suggestedStartTime === '11:23', `Giờ gợi ý bắt đầu chính xác ngay sau ca trước (11:23 vs ${suggestion.suggestedStartTime})`);
+    assert(suggestion.suggestedEndTime === '13:23', `Giờ kết thúc dự kiến chính xác (13:23 vs ${suggestion.suggestedEndTime})`);
+  }
+
+  // TEST 6: LẬP TIMELINE PHÒNG CHIẾU (TIMELINE & FREE SLOTS)
+  console.log('\n👉 NHÓM 6: Timeline phòng chiếu & Khoảng thời gian trống (Free Slots)');
+  {
+    const existingList = [
+      {
+        _id: 'show_001',
+        movieTitle: 'Hành Tinh Đỏ',
+        cinemaName: 'CineNow Landmark 81',
+        room: 'PHÒNG 01',
+        date: '2026-10-16',
+        startTime: '09:00',
+        endTime: '11:23',
+        status: 'scheduled',
+      },
+      {
+        _id: 'show_002',
+        movieTitle: 'Kẻ Giữ Thời Gian',
+        cinemaName: 'CineNow Landmark 81',
+        room: 'PHÒNG 01',
+        date: '2026-10-16',
+        startTime: '14:00',
+        endTime: '16:11',
+        status: 'scheduled',
+      },
+    ];
+
+    const timeline = getRoomScheduleTimeline({
+      cinemaName: 'CineNow Landmark 81',
+      room: 'PHÒNG 01',
+      date: '2026-10-16',
+      existingShowtimes: existingList,
+    });
+
+    assert(timeline.totalOccupiedShows === 2, 'Tổng số ca chiếu đã đặt là 2');
+    assert(timeline.busySlots.length === 2, 'Danh sách ca bận có đúng 2 ca');
+    assert(timeline.freeSlots.length > 0, 'Phát hiện các khoảng thời gian trống trong ngày');
+
+    // Khoảng trống giữa 11:23 và 14:00 (157 phút)
+    const midSlot = timeline.freeSlots.find((s) => s.startTime === '11:23' && s.endTime === '14:00');
+    assert(Boolean(midSlot), 'Xác định chính xác khoảng trống giữa ca sáng và ca chiều (11:23 - 14:00)');
+    assert(midSlot?.availableMinutes === 157, 'Thời lượng khoảng trống chính xác (157 phút)');
   }
 
   console.log('\n===========================================================');

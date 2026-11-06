@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import {
   View,
   Text,
@@ -141,6 +141,24 @@ export default function TicketDetailScreen({
                 : ticket.seats || 'Chưa xác định'}
             </Text>
           </View>
+
+          {Array.isArray(ticket.concessions) && ticket.concessions.length > 0 && (
+            <View style={styles.concessionsSection}>
+              <View style={styles.concessionDivider} />
+              <Text style={styles.concessionsHeader}>🍿 BẮP NƯỚC & SNACK</Text>
+              {ticket.concessions.map((item, idx) => (
+                <View key={idx} style={styles.concessionRow}>
+                  <Text style={styles.concessionItemName} numberOfLines={1}>
+                    {item.quantity}x {item.name}
+                  </Text>
+                  <Text style={styles.concessionItemPrice}>
+                    {(Number(item.price) * Number(item.quantity)).toLocaleString('vi-VN')}đ
+                  </Text>
+                </View>
+              ))}
+              <View style={styles.concessionDivider} />
+            </View>
+          )}
 
           <View style={[styles.detailRow, styles.totalRow]}>
             <Text style={styles.totalLabel}>Tổng thanh toán</Text>
@@ -407,6 +425,39 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: 'bold',
     flex: 1.3,
+    textAlign: 'right',
+  },
+  concessionsSection: {
+    marginVertical: 4,
+  },
+  concessionDivider: {
+    height: 1,
+    backgroundColor: '#2B2B2B',
+    marginVertical: 8,
+  },
+  concessionsHeader: {
+    color: '#EAB308',
+    fontSize: 12,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  concessionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  concessionItemName: {
+    color: '#CCCCCC',
+    fontSize: 13,
+    flex: 1.4,
+  },
+  concessionItemPrice: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 0.8,
     textAlign: 'right',
   },
   totalRow: {

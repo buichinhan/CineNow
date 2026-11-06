@@ -197,3 +197,41 @@ export async function fetchShowtimesManagement(filters = {}) {
     throw error;
   }
 }
+
+/**
+ * Gọi API lấy timeline lịch phòng chiếu (ca bận và ca trống)
+ * @param {Object} params { cinemaName, room, date }
+ */
+export async function fetchRoomTimelineApi({ cinemaName, room, date }) {
+  try {
+    const params = new URLSearchParams({ cinemaName, room, date });
+    const res = await fetch(`${API_BASE_URL}/showtimes/timeline?${params.toString()}`);
+    if (!res.ok) throw new Error('Không thể tải timeline phòng chiếu');
+    const json = await res.json();
+    return json.data;
+  } catch (error) {
+    console.warn('Lỗi lấy timeline phòng chiếu:', error.message);
+    throw error;
+  }
+}
+
+// =========================================================================
+// BẮP NƯỚC VÀ SNACK (CONCESSIONS & COMBOS)
+// =========================================================================
+
+/**
+ * Gọi API lấy danh mục bắp nước & combo
+ * @param {string} [category] - 'all' | 'combo' | 'popcorn' | 'drink' | 'snack'
+ */
+export async function fetchConcessions(category) {
+  try {
+    const query = category && category !== 'all' ? `?category=${category}` : '';
+    const res = await fetch(`${API_BASE_URL}/concessions${query}`);
+    if (!res.ok) throw new Error('Không thể tải danh sách bắp nước và snack');
+    const json = await res.json();
+    return json.data || [];
+  } catch (error) {
+    console.warn('Lỗi gọi API /concessions:', error.message);
+    throw error;
+  }
+}
