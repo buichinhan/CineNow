@@ -23,6 +23,11 @@ const cinemaSchema = new mongoose.Schema(
       type: String,
       default: 'TP. Hồ Chí Minh',
     },
+    status: {
+  type: String,
+  enum: ['ACTIVE', 'INACTIVE'],
+  default: 'ACTIVE',
+},
   },
   {
     timestamps: true,
