@@ -19,6 +19,13 @@ const {
   INITIAL_CONCESSIONS,
 } = require('./seedData');
 
+const {
+  holdSeats,
+  releaseSeats,
+  confirmBookedSeats,
+  getSeatsWithHoldStatus,
+} = require('./services/seatHoldService');
+
 // ====================== APP CONFIGURATION ======================
 
 const app = express();
@@ -184,54 +191,170 @@ app.get('/api/home', async (req, res) => {
   }
 });
 
-// ====================== SEATS API ======================
+// ====================== SEATS & TEMPORARY HOLD API ======================
 
+async function getBookedSeatsForScreening({ cinemaName, room, date, time }) {
+  const booked = [];
+  if (mongoose.connection.readyState === 1) {
+    try {
+      const bookings = await Booking.find({
+        cinemaName,
+        date,
+        time,
+        status: 'confirmed',
+      }).lean();
+      bookings.forEach((b) => {
+        if (Array.isArray(b.seats)) booked.push(...b.seats);
+      });
+      return booked;
+    } catch (err) {
+      console.warn('Lỗi lấy danh sách ghế đã đặt từ DB:', err.message);
+    }
+  }
+
+  // Fallback in-memory
+  memoryStore.bookings
+    .filter(
+      (b) =>
+        b.cinemaName === cinemaName &&
+        b.date === date &&
+        b.time === time &&
+        b.status === 'confirmed'
+    )
+    .forEach((b) => {
+      if (Array.isArray(b.seats)) booked.push(...b.seats);
+    });
+
+  return booked;
+}
+
+/**
+ * 1. GET /api/seats
+ * Lấy sơ đồ ghế, trạng thái đã đặt / đang giữ tạm thời
+ */
 app.get('/api/seats', async (req, res) => {
   try {
+    const {
+      cinemaName = 'CineNow Landmark 81',
+      room = 'PHÒNG 03',
+      date = '16.10.2026',
+      time = '19:00',
+      holdToken,
+    } = req.query;
+
+    const bookedSeatsList = await getBookedSeatsForScreening({
+      cinemaName,
+      room,
+      date,
+      time,
+    });
+
+    const data = getSeatsWithHoldStatus({
+      cinemaName,
+      room,
+      date,
+      time,
+      holdToken,
+      initialLayout: INITIAL_SEAT_LAYOUT,
+      bookedSeatsList,
+    });
+
     return res.json({
       success: true,
-      data: {
-        room: 'PHÒNG 03',
-        seatLayout: memoryStore.seatLayout,
-
-        legend: [
-          {
-            type: 'standard',
-            label: 'Thường',
-            color: '#3F3F46',
-            price: 85000,
-          },
-          {
-            type: 'vip',
-            label: 'VIP',
-            color: '#EAB308',
-            price: 95000,
-          },
-          {
-            type: 'sweetbox',
-            label: 'Ghế đôi',
-            color: '#881337',
-            price: 190000,
-          },
-          {
-            type: 'booked',
-            label: 'Đã đặt',
-            color: '#18181B',
-          },
-          {
-            type: 'selected',
-            label: 'Đang chọn',
-            color: '#E50914',
-          },
-        ],
-      },
+      data,
     });
   } catch (error) {
     console.error('Lỗi /api/seats:', error.message);
-
     return res.status(500).json({
       success: false,
       message: 'Lỗi tải sơ đồ ghế.',
+    });
+  }
+});
+
+/**
+ * 2. POST /api/seats/hold
+ * Giữ ghế tạm thời (Kiểm soát đồng thời, ngăn chặn 2 người cùng chọn 1 ghế)
+ */
+app.post('/api/seats/hold', async (req, res) => {
+  try {
+    const {
+      cinemaName = 'CineNow Landmark 81',
+      room = 'PHÒNG 03',
+      date = '16.10.2026',
+      time = '19:00',
+      seats,
+      holdToken,
+      userId,
+      durationSeconds,
+    } = req.body;
+
+    const bookedSeatsList = await getBookedSeatsForScreening({
+      cinemaName,
+      room,
+      date,
+      time,
+    });
+
+    const result = holdSeats({
+      cinemaName,
+      room,
+      date,
+      time,
+      seats,
+      holdToken,
+      userId,
+      durationSeconds,
+      initialLayout: INITIAL_SEAT_LAYOUT,
+      bookedSeatsList,
+    });
+
+    if (!result.success) {
+      return res.status(409).json(result);
+    }
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Lỗi /api/seats/hold:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Lỗi giữ ghế tạm thời.',
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * 3. POST /api/seats/release
+ * Giải phóng ghế giữ tạm (Khi hủy chọn, nhấn Back hoặc hết hạn)
+ */
+app.post('/api/seats/release', async (req, res) => {
+  try {
+    const {
+      cinemaName = 'CineNow Landmark 81',
+      room = 'PHÒNG 03',
+      date = '16.10.2026',
+      time = '19:00',
+      seats,
+      holdToken,
+    } = req.body;
+
+    const result = releaseSeats({
+      cinemaName,
+      room,
+      date,
+      time,
+      seats,
+      holdToken,
+    });
+
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('Lỗi /api/seats/release:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Lỗi giải phóng ghế.',
+      error: error.message,
     });
   }
 });
@@ -363,6 +486,7 @@ app.post('/api/bookings', async (req, res) => {
     const {
       userId,
       movieTitle,
+      poster,
       cinemaName,
       room,
       date,
@@ -372,6 +496,7 @@ app.post('/api/bookings', async (req, res) => {
       concessions = [],
       concessionsTotal,
       totalPrice,
+      holdToken,
     } = req.body;
 
     if (
@@ -384,6 +509,17 @@ app.post('/api/bookings', async (req, res) => {
         message: 'Vui lòng chọn ít nhất 1 ghế.',
       });
     }
+
+    // Chuyển trạng thái ghế từ holding sang booked và giải phóng khóa giữ
+    confirmBookedSeats({
+      cinemaName: cinemaName || 'CineNow Landmark 81',
+      room: room || 'PHÒNG 03',
+      date: date || '16.10.2026',
+      time: time || '19:00',
+      seats,
+      holdToken,
+      initialLayout: INITIAL_SEAT_LAYOUT,
+    });
 
     // Cập nhật trạng thái ghế trong dữ liệu dự phòng.
     const seatLayout = memoryStore.seatLayout;
@@ -422,6 +558,7 @@ app.post('/api/bookings', async (req, res) => {
       bookingCode,
       userId,
       movieTitle,
+      poster: poster || '',
       cinemaName,
       room: room || 'PHÒNG 03',
       date: date || '16.10.2026',

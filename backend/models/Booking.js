@@ -15,6 +15,10 @@ const bookingSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    poster: {
+      type: String,
+      default: '',
+    },
     cinemaName: {
       type: String,
       required: true,

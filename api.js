@@ -58,17 +58,64 @@ export async function fetchShowtimes(movieId, date) {
 }
 
 /**
- * Gọi API lấy sơ đồ ghế và trạng thái đặt ghế
+ * Gọi API lấy sơ đồ ghế và trạng thái đặt ghế / giữ ghế tạm
  */
-export async function fetchSeats(movieId, cinemaName, date, time) {
+export async function fetchSeats(movieId, cinemaName, date, time, holdToken = null, room = '') {
   try {
-    const query = `?movieId=${movieId}&cinemaName=${encodeURIComponent(cinemaName || '')}&date=${date}&time=${time}`;
+    let query = `?movieId=${movieId}&cinemaName=${encodeURIComponent(cinemaName || '')}&date=${date}&time=${time}`;
+    if (room) query += `&room=${encodeURIComponent(room)}`;
+    if (holdToken) query += `&holdToken=${encodeURIComponent(holdToken)}`;
+
     const res = await fetch(`${API_BASE_URL}/seats${query}`);
     if (!res.ok) throw new Error('Không thể tải sơ đồ ghế');
     const json = await res.json();
     return json.data;
   } catch (error) {
     console.warn('Lỗi gọi API /seats:', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Gọi API Giữ ghế tạm thời (Temporary Seat Hold)
+ * @param {Object} payload { cinemaName, room, date, time, seats, holdToken, userId, durationSeconds }
+ */
+export async function holdSeatsApi(payload) {
+  try {
+    const res = await fetch(`${API_BASE_URL}/seats/hold`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      const error = new Error(json.message || 'Không thể giữ ghế tạm thời');
+      error.code = json.code;
+      error.conflictingSeats = json.conflictingSeats;
+      throw error;
+    }
+    return json;
+  } catch (error) {
+    console.warn('Lỗi giữ ghế tạm thời:', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Gọi API Giải phóng ghế giữ tạm (Release Seats)
+ * @param {Object} payload { cinemaName, room, date, time, seats, holdToken }
+ */
+export async function releaseSeatsApi(payload) {
+  try {
+    const res = await fetch(`${API_BASE_URL}/seats/release`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const json = await res.json();
+    return json;
+  } catch (error) {
+    console.warn('Lỗi giải phóng ghế:', error.message);
     throw error;
   }
 }
