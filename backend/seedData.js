@@ -259,6 +259,16 @@ const INITIAL_CONCESSIONS = [
     image: 'https://images.unsplash.com/photo-1505686994434-e3cc5abf1330?w=400',
     isAvailable: true,
   },
+  {
+    id: 'cb-04',
+    name: 'Combo Gia Đình (3 Bắp + 4 Nước + 2 Snack)',
+    category: 'combo',
+    price: 259000,
+    badge: 'Tiết kiệm 65k ⭐',
+    description: '3 Bắp lớn vị tuỳ chọn + 4 Ly nước 32oz + 2 Gói bánh Snack Lay\'s.',
+    image: 'https://images.unsplash.com/photo-1512149177596-f817c7ef5d4c?w=400',
+    isAvailable: true,
+  },
   // BẮP RANG BƠ
   {
     id: 'pop-01',
@@ -288,6 +298,16 @@ const INITIAL_CONCESSIONS = [
     badge: 'Hot',
     description: 'Phủ sốt caramel đường nâu giòn rụm bóng bẩy ngọt lịm.',
     image: 'https://images.unsplash.com/photo-1512149177596-f817c7ef5d4c?w=400',
+    isAvailable: true,
+  },
+  {
+    id: 'pop-04',
+    name: 'Bắp rang Socola đậm vị (Lớn)',
+    category: 'popcorn',
+    price: 69000,
+    badge: 'Mới ra mắt',
+    description: 'Phủ socola nguyên chất thơm bùi, vị ngọt đắng tinh tế.',
+    image: 'https://images.unsplash.com/photo-1578849278619-e73505e9610f?w=400',
     isAvailable: true,
   },
   // NƯỚC UỐNG
@@ -360,6 +380,16 @@ const INITIAL_CONCESSIONS = [
     badge: '',
     description: 'Bánh que quy giòn bọc socola thơm ngon dễ ăn trong rạp.',
     image: 'https://images.unsplash.com/photo-1541781774459-bb2af2f05b55?w=400',
+    isAvailable: true,
+  },
+  {
+    id: 'snk-04',
+    name: 'Khô bò xé sợi cay Tứ Xuyên',
+    category: 'snack',
+    price: 45000,
+    badge: 'Cay nồng 🌶️',
+    description: 'Thịt bò tẩm ướp thơm cay đậm vị, món nhâm nhi số 1 trong rạp.',
+    image: 'https://images.unsplash.com/photo-1544025162-d76694265947?w=400',
     isAvailable: true,
   },
 ];

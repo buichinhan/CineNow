@@ -20,6 +20,7 @@ import SeatSelectionScreen from './seatSelection';
 import ConcessionsScreen from './concessions';
 import MovieCatalogScreen from './screens/MovieCatalogScreen';
 import MyTicketsScreen from './screens/MyTicketsScreen';
+import { initialTickets } from './data/mockTickets';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('splash');
@@ -27,6 +28,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [selectedMovie, setSelectedMovie] = useState(null);
   const [selectedBooking, setSelectedBooking] = useState(null);
+  const [tickets, setTickets] = useState(initialTickets);
 
   useEffect(() => {
     if (currentScreen !== 'splash') {
@@ -67,6 +69,44 @@ export default function App() {
         },
       ]
     );
+  };
+
+  const handleBookingComplete = (newBooking) => {
+    if (newBooking) {
+      const ticketToAdd = {
+        id: newBooking.id || newBooking._id || `booking_${Date.now()}`,
+        bookingCode:
+          newBooking.bookingCode ||
+          `CN-${Math.floor(100000 + Math.random() * 900000)}`,
+        movieTitle:
+          newBooking.movieTitle || selectedMovie?.title || 'Phim CineNow',
+        poster:
+          newBooking.poster ||
+          selectedMovie?.poster ||
+          selectedMovie?.posterUrl ||
+          'https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=500',
+        cinemaName:
+          newBooking.cinemaName ||
+          selectedBooking?.cinema?.name ||
+          'CineNow Landmark 81',
+        room: newBooking.room || selectedBooking?.room || 'PHÒNG 03',
+        date: newBooking.date || selectedBooking?.date || 'Hôm nay',
+        time: newBooking.time || selectedBooking?.time || '19:00',
+        seats: newBooking.seats || selectedBooking?.selectedSeats || [],
+        seatTotal: newBooking.seatTotal || selectedBooking?.seatTotal || 0,
+        concessions: newBooking.concessions || [],
+        concessionsTotal: newBooking.concessionsTotal || 0,
+        totalPrice: newBooking.totalPrice || 0,
+        status: 'confirmed',
+        createdAt: new Date().toISOString(),
+        refundStatus: 'Chưa yêu cầu',
+      };
+
+      setTickets((prev) => [ticketToAdd, ...prev]);
+    }
+    setSelectedBooking(null);
+    setCurrentScreen('home');
+    setActiveTab('tickets');
   };
 
   // 1. Màn hình Đăng ký
@@ -133,11 +173,7 @@ export default function App() {
           }));
           setCurrentScreen('concessions');
         }}
-        onComplete={() => {
-          setSelectedBooking(null);
-          setCurrentScreen('home');
-          setActiveTab('tickets');
-        }}
+        onComplete={handleBookingComplete}
       />
     );
   }
@@ -152,11 +188,7 @@ export default function App() {
         seatTotal={selectedBooking?.seatTotal || 0}
         user={user}
         onBack={() => setCurrentScreen('seatSelection')}
-        onComplete={(newBooking) => {
-          setSelectedBooking(null);
-          setCurrentScreen('home');
-          setActiveTab('tickets');
-        }}
+        onComplete={handleBookingComplete}
       />
     );
   }
@@ -202,6 +234,8 @@ export default function App() {
           {/* TAB 3: VÉ CỦA TÔI */}
           {activeTab === 'tickets' && (
             <MyTicketsScreen
+              tickets={tickets}
+              onTicketsChange={setTickets}
               onBack={() => setActiveTab('home')}
             />
           )}

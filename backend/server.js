@@ -486,6 +486,7 @@ app.post('/api/bookings', async (req, res) => {
     const {
       userId,
       movieTitle,
+      poster,
       cinemaName,
       room,
       date,
@@ -557,6 +558,7 @@ app.post('/api/bookings', async (req, res) => {
       bookingCode,
       userId,
       movieTitle,
+      poster: poster || '',
       cinemaName,
       room: room || 'PHÒNG 03',
       date: date || '16.10.2026',

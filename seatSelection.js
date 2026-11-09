@@ -428,19 +428,6 @@ export default function SeatSelectionScreen({
             <Text style={styles.legendText}>Đang chọn</Text>
           </View>
         </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendBox, { backgroundColor: '#881337' }]} />
-            <Text style={styles.legendText}>Ghế đôi</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendBox, { backgroundColor: '#18181B' }]} />
-            <Text style={styles.legendText}>Đã đặt</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendBox, { backgroundColor: '#E50914' }]} />
-            <Text style={styles.legendText}>Đang chọn</Text>
-          </View>
-        </View>
 
         {/* Selected Seats Banner */}
         <View style={styles.selectedSeatsBanner}>

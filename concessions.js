@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,10 +10,12 @@ import {
   ActivityIndicator,
   SafeAreaView,
   Alert,
+  TextInput,
+  Modal,
 } from 'react-native';
 import { fetchConcessions, createBooking } from './api';
 
-// Dữ liệu dự phòng khi ngoại tuyến
+// Dữ liệu bắp nước dự phòng cao cấp
 const FALLBACK_CONCESSIONS = [
   {
     id: 'cb-01',
@@ -21,9 +23,11 @@ const FALLBACK_CONCESSIONS = [
     category: 'combo',
     price: 85000,
     badge: 'Tiết kiệm 20k',
-    description: '1 Bắp rang bơ ngọt (Lớn) + 1 Nước ngọt có gas 32oz',
+    description: '1 Bắp rang bơ ngọt (Lớn) + 1 Nước ngọt có gas 32oz.',
     image: 'https://images.unsplash.com/photo-1572177812156-58036aae439c?w=400',
     isAvailable: true,
+    flavors: ['Bơ ngọt truyền thống', 'Phô mai (+10k)', 'Caramel (+10k)'],
+    drinks: ['Coca-Cola', 'Sprite', 'Fanta Cam', 'Nước khoáng'],
   },
   {
     id: 'cb-02',
@@ -31,9 +35,11 @@ const FALLBACK_CONCESSIONS = [
     category: 'combo',
     price: 115000,
     badge: 'Bán chạy nhất 🔥',
-    description: '1 Bắp phô mai đặc biệt (Lớn) + 2 Nước ngọt tuỳ chọn 32oz',
+    description: '1 Bắp phô mai đặc biệt (Lớn) + 2 Nước ngọt tuỳ chọn 32oz.',
     image: 'https://images.unsplash.com/photo-1585647347384-2593bc35786b?w=400',
     isAvailable: true,
+    flavors: ['Phô mai hảo hạng', 'Bơ ngọt truyền thống', 'Caramel'],
+    drinks: ['Coca-Cola & Sprite', '2x Coca-Cola', 'Coca-Cola & Fanta'],
   },
   {
     id: 'cb-03',
@@ -41,8 +47,20 @@ const FALLBACK_CONCESSIONS = [
     category: 'combo',
     price: 189000,
     badge: 'Ưu đãi nhóm',
-    description: '2 Bắp lớn (Phô mai/Caramel) + 3 Nước ngọt + 1 Snack Lay\'s',
+    description: '2 Bắp lớn (Phô mai/Caramel) + 3 Nước ngọt + 1 Snack Lay\'s giòn tan.',
     image: 'https://images.unsplash.com/photo-1505686994434-e3cc5abf1330?w=400',
+    isAvailable: true,
+    flavors: ['1 Phô mai + 1 Caramel', '2 Bắp phô mai', '2 Bắp ngọt bơ'],
+    drinks: ['3x Nước ngọt tuỳ chọn'],
+  },
+  {
+    id: 'cb-04',
+    name: 'Combo Gia Đình (3 Bắp + 4 Nước + 2 Snack)',
+    category: 'combo',
+    price: 259000,
+    badge: 'Tiết kiệm 65k ⭐',
+    description: '3 Bắp lớn vị tuỳ chọn + 4 Ly nước 32oz + 2 Gói bánh Snack Lay\'s.',
+    image: 'https://images.unsplash.com/photo-1512149177596-f817c7ef5d4c?w=400',
     isAvailable: true,
   },
   {
@@ -51,7 +69,7 @@ const FALLBACK_CONCESSIONS = [
     category: 'popcorn',
     price: 55000,
     badge: 'Truyền thống',
-    description: 'Hạt bắp nổ giòn xốp phủ bơ vàng thơm nức mũi.',
+    description: 'Hạt bắp nổ giòn xốp phủ bơ vàng óng thơm nức mũi.',
     image: 'https://images.unsplash.com/photo-1578849278619-e73505e9610f?w=400',
     isAvailable: true,
   },
@@ -61,7 +79,7 @@ const FALLBACK_CONCESSIONS = [
     category: 'popcorn',
     price: 65000,
     badge: 'Yêu thích ⭐',
-    description: 'Lắc bột phô mai Cheddar hảo hạng đậm đà từng hạt bắp.',
+    description: 'Lắc bột phô mai Cheddar hảo hạng đậm đà từng hạt bắp giòn rụm.',
     image: 'https://images.unsplash.com/photo-1585647347414-6726d8232217?w=400',
     isAvailable: true,
   },
@@ -71,8 +89,18 @@ const FALLBACK_CONCESSIONS = [
     category: 'popcorn',
     price: 65000,
     badge: 'Hot',
-    description: 'Phủ sốt caramel đường nâu giòn rụm bóng bẩy ngọt lịm.',
+    description: 'Phủ sốt caramel đường nâu giòn rụm bóng bẩy ngọt lịm khó cưỡng.',
     image: 'https://images.unsplash.com/photo-1512149177596-f817c7ef5d4c?w=400',
+    isAvailable: true,
+  },
+  {
+    id: 'pop-04',
+    name: 'Bắp rang Socola đậm vị (Lớn)',
+    category: 'popcorn',
+    price: 69000,
+    badge: 'Mới ra mắt',
+    description: 'Phủ socola nguyên chất thơm bùi, vị ngọt đắng tinh tế.',
+    image: 'https://images.unsplash.com/photo-1578849278619-e73505e9610f?w=400',
     isAvailable: true,
   },
   {
@@ -81,7 +109,7 @@ const FALLBACK_CONCESSIONS = [
     category: 'drink',
     price: 35000,
     badge: '',
-    description: 'Ly lớn 32oz đá mát lạnh sảng khoái đánh thức vị giác.',
+    description: 'Ly lớn 32oz đá mát lạnh sảng khoái đánh thức mọi giác quan.',
     image: 'https://images.unsplash.com/photo-1622483767028-3f66f32aef97?w=400',
     isAvailable: true,
   },
@@ -101,7 +129,7 @@ const FALLBACK_CONCESSIONS = [
     category: 'drink',
     price: 45000,
     badge: 'Thanh mát',
-    description: 'Trà hoa quả đào giòn kèm hương sả cam tươi giải nhiệt.',
+    description: 'Trà hoa quả đào giòn kèm hương sả cam tươi ngọt thanh giải nhiệt.',
     image: 'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?w=400',
     isAvailable: true,
   },
@@ -111,7 +139,7 @@ const FALLBACK_CONCESSIONS = [
     category: 'drink',
     price: 20000,
     badge: '',
-    description: 'Nước tinh khiết đóng chai mát lành.',
+    description: 'Nước tinh khiết đóng chai mát lành, tiện lợi mang theo.',
     image: 'https://images.unsplash.com/photo-1548839140-29a749e1bc4e?w=400',
     isAvailable: true,
   },
@@ -121,7 +149,7 @@ const FALLBACK_CONCESSIONS = [
     category: 'snack',
     price: 28000,
     badge: 'Giòn tan',
-    description: 'Lát khoai tây mỏng giòn tẩm gia vị tảo biển thơm ngon.',
+    description: 'Lát khoai tây mỏng giòn tẩm gia vị tảo biển thơm ngon đậm đà.',
     image: 'https://images.unsplash.com/photo-1566478989037-eec170784d0b?w=400',
     isAvailable: true,
   },
@@ -141,8 +169,18 @@ const FALLBACK_CONCESSIONS = [
     category: 'snack',
     price: 25000,
     badge: '',
-    description: 'Bánh que quy giòn bọc socola thơm ngon dễ ăn trong rạp.',
+    description: 'Bánh que quy giòn bọc socola thơm ngon dễ ăn khi xem phim.',
     image: 'https://images.unsplash.com/photo-1541781774459-bb2af2f05b55?w=400',
+    isAvailable: true,
+  },
+  {
+    id: 'snk-04',
+    name: 'Khô bò xé sợi cay Tứ Xuyên',
+    category: 'snack',
+    price: 45000,
+    badge: 'Cay nồng 🌶️',
+    description: 'Thịt bò tẩm ướp thơm cay đậm vị, món nhâm nhi số 1 trong rạp.',
+    image: 'https://images.unsplash.com/photo-1544025162-d76694265947?w=400',
     isAvailable: true,
   },
 ];
@@ -152,7 +190,7 @@ const CATEGORIES = [
   { key: 'combo', label: 'Combo ưu đãi 🍿' },
   { key: 'popcorn', label: 'Bắp rang' },
   { key: 'drink', label: 'Nước ngọt' },
-  { key: 'snack', label: 'Snack' },
+  { key: 'snack', label: 'Snack & Ăn vặt' },
 ];
 
 export default function ConcessionsScreen({
@@ -167,10 +205,13 @@ export default function ConcessionsScreen({
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState('all');
-  const [cart, setCart] = useState({}); // { [itemId]: quantity }
+  const [searchQuery, setSearchQuery] = useState('');
+  const [cart, setCart] = useState({}); // { [itemId]: { quantity: number, note: string } }
   const [submitting, setSubmitting] = useState(false);
+  const [showOrderModal, setShowOrderModal] = useState(false);
+  const [showCartDrawer, setShowCartDrawer] = useState(false);
 
-  // Đếm ngược thời gian giữ ghế
+  // Đếm ngược thời gian giữ ghế (5 phút)
   const [remainingSeconds, setRemainingSeconds] = useState(
     bookingData?.remainingSeconds ||
       (bookingData?.holdExpiresAt
@@ -198,7 +239,7 @@ export default function ConcessionsScreen({
   const handleHoldExpired = () => {
     Alert.alert(
       'Hết thời gian giữ ghế! ⏳',
-      'Đã hết thời gian giữ ghế (5 phút). Các ghế của bạn đã được tự động giải phóng.',
+      'Đã hết thời gian giữ ghế (5 phút). Các ghế của bạn đã được tự động giải phóng. Vui lòng chọn lại ghế.',
       [
         {
           text: 'Quay lại chọn ghế',
@@ -229,7 +270,7 @@ export default function ConcessionsScreen({
         setItems(FALLBACK_CONCESSIONS);
       }
     } catch (err) {
-      console.warn('Lỗi tải bắp nước, dùng dữ liệu mẫu:', err.message);
+      console.warn('Lỗi tải bắp nước, dùng dữ liệu dự phòng:', err.message);
       setItems(FALLBACK_CONCESSIONS);
     } finally {
       setLoading(false);
@@ -237,15 +278,21 @@ export default function ConcessionsScreen({
   };
 
   const handleIncrement = (itemId) => {
-    setCart((prev) => ({
-      ...prev,
-      [itemId]: (prev[itemId] || 0) + 1,
-    }));
+    setCart((prev) => {
+      const current = prev[itemId]?.quantity || 0;
+      return {
+        ...prev,
+        [itemId]: {
+          quantity: current + 1,
+          note: prev[itemId]?.note || '',
+        },
+      };
+    });
   };
 
   const handleDecrement = (itemId) => {
     setCart((prev) => {
-      const current = prev[itemId] || 0;
+      const current = prev[itemId]?.quantity || 0;
       if (current <= 1) {
         const next = { ...prev };
         delete next[itemId];
@@ -253,46 +300,74 @@ export default function ConcessionsScreen({
       }
       return {
         ...prev,
-        [itemId]: current - 1,
+        [itemId]: {
+          ...prev[itemId],
+          quantity: current - 1,
+        },
       };
     });
   };
 
-  // Tính toán tiền bắp nước
-  const selectedConcessionsList = Object.entries(cart)
-    .filter(([_, qty]) => qty > 0)
-    .map(([id, qty]) => {
-      const item = items.find((i) => i.id === id);
-      return {
-        id,
-        name: item?.name || 'Món',
-        price: item?.price || 0,
-        quantity: qty,
-        category: item?.category,
-        total: (item?.price || 0) * qty,
-      };
+  const handleClearItem = (itemId) => {
+    setCart((prev) => {
+      const next = { ...prev };
+      delete next[itemId];
+      return next;
     });
+  };
 
-  const concessionsTotal = selectedConcessionsList.reduce(
-    (sum, item) => sum + item.total,
-    0
-  );
+  // Danh sách các món bắp nước đã chọn
+  const selectedConcessionsList = useMemo(() => {
+    return Object.entries(cart)
+      .filter(([_, data]) => data && data.quantity > 0)
+      .map(([id, data]) => {
+        const item = items.find((i) => i.id === id) || FALLBACK_CONCESSIONS.find((i) => i.id === id);
+        return {
+          id,
+          name: item?.name || 'Món',
+          price: item?.price || 0,
+          quantity: data.quantity,
+          category: item?.category,
+          note: data.note || '',
+          total: (item?.price || 0) * data.quantity,
+          image: item?.image,
+        };
+      });
+  }, [cart, items]);
 
-  const totalQuantity = selectedConcessionsList.reduce(
-    (sum, item) => sum + item.quantity,
-    0
-  );
+  const concessionsTotal = useMemo(() => {
+    return selectedConcessionsList.reduce((sum, item) => sum + item.total, 0);
+  }, [selectedConcessionsList]);
+
+  const totalQuantity = useMemo(() => {
+    return selectedConcessionsList.reduce((sum, item) => sum + item.quantity, 0);
+  }, [selectedConcessionsList]);
 
   const grandTotal = seatTotal + concessionsTotal;
 
   const movieTitle = movie?.title || bookingData?.movie?.title || 'Hành Tinh Đỏ';
+  const moviePoster =
+    movie?.poster ||
+    movie?.posterUrl ||
+    bookingData?.movie?.poster ||
+    bookingData?.movie?.posterUrl ||
+    'https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=500';
   const cinemaName = bookingData?.cinema?.name || 'CineNow Landmark 81';
   const roomName = bookingData?.room || 'PHÒNG 03';
   const showDate = bookingData?.date || '16.10.2026';
   const showTime = bookingData?.time || '19:00';
 
+  const handleOpenConfirmModal = (skip = false) => {
+    if (skip) {
+      handleConfirmOrder(true);
+    } else {
+      setShowOrderModal(true);
+    }
+  };
+
   const handleConfirmOrder = async (skipConcessions = false) => {
     try {
+      setShowOrderModal(false);
       setSubmitting(true);
 
       const finalConcessions = skipConcessions ? [] : selectedConcessionsList;
@@ -302,6 +377,7 @@ export default function ConcessionsScreen({
       const payload = {
         userId: user?._id || user?.id,
         movieTitle,
+        poster: moviePoster,
         cinemaName,
         room: roomName,
         date: showDate,
@@ -316,18 +392,41 @@ export default function ConcessionsScreen({
 
       const res = await createBooking(payload);
 
-      const bookingCode = res.data?.bookingCode || 'CN-' + Math.floor(100000 + Math.random() * 900000);
-      const snackSummary = finalConcessions.length > 0
-        ? `\nBắp nước: ${finalConcessions.map((c) => `${c.quantity}x ${c.name}`).join(', ')}`
-        : '';
+      const bookingCode =
+        res.data?.bookingCode || 'CN-' + Math.floor(100000 + Math.random() * 900000);
+      const snackSummary =
+        finalConcessions.length > 0
+          ? `\n🍿 Bắp nước: ${finalConcessions
+              .map((c) => `${c.quantity}x ${c.name}`)
+              .join(', ')}`
+          : '\n🍿 Bắp nước: Không';
+
+      const bookingResult = {
+        ...res.data,
+        id: res.data?.id || res.data?._id || `booking_${Date.now()}`,
+        bookingCode,
+        movieTitle,
+        poster: moviePoster,
+        cinemaName,
+        room: roomName,
+        date: showDate,
+        time: showTime,
+        seats: selectedSeats,
+        seatTotal,
+        concessions: finalConcessions,
+        concessionsTotal: finalConcessionsTotal,
+        totalPrice: finalGrandTotal,
+        status: 'confirmed',
+        createdAt: new Date().toISOString(),
+      };
 
       Alert.alert(
         'Đặt vé thành công! 🎉',
-        `Mã vé: ${bookingCode}\nPhim: ${movieTitle}\nSuất: ${showTime} - ${showDate}\nGhế: ${selectedSeats.join(', ')}${snackSummary}\nTổng tiền: ${finalGrandTotal.toLocaleString('vi-VN')}đ`,
+        `Mã vé: ${bookingCode}\nPhim: ${movieTitle}\nSuất: ${showTime} (${showDate})\nGhế: ${selectedSeats.join(', ')}${snackSummary}\nTổng tiền: ${finalGrandTotal.toLocaleString('vi-VN')}đ\n\nQuý khách vui lòng quét mã vé tại quầy để nhận bắp nước.`,
         [
           {
             text: 'Xem vé của tôi',
-            onPress: () => onComplete && onComplete(res.data),
+            onPress: () => onComplete && onComplete(bookingResult),
           },
         ]
       );
@@ -338,9 +437,17 @@ export default function ConcessionsScreen({
     }
   };
 
+  // Lọc theo Category và Từ khóa tìm kiếm
   const filteredItems = items.filter((item) => {
-    if (selectedCategory === 'all') return true;
-    return item.category === selectedCategory;
+    const matchCategory =
+      selectedCategory === 'all' ? true : item.category === selectedCategory;
+    const matchQuery =
+      searchQuery.trim() === ''
+        ? true
+        : item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (item.description &&
+            item.description.toLowerCase().includes(searchQuery.toLowerCase()));
+    return matchCategory && matchQuery;
   });
 
   return (
@@ -351,11 +458,24 @@ export default function ConcessionsScreen({
       <View style={styles.topBar}>
         <TouchableOpacity style={styles.backButton} onPress={onBack} activeOpacity={0.7}>
           <Text style={styles.backArrow}>❮</Text>
-          <Text style={styles.topBarTitle}>Bắp nước & Snack</Text>
+          <Text style={styles.topBarTitle}>Bắp nước & Combo</Text>
         </TouchableOpacity>
+
+        {totalQuantity > 0 && (
+          <TouchableOpacity
+            style={styles.cartHeaderButton}
+            onPress={() => setShowCartDrawer(true)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.cartHeaderIcon}>🛒</Text>
+            <View style={styles.cartBadge}>
+              <Text style={styles.cartBadgeText}>{totalQuantity}</Text>
+            </View>
+          </TouchableOpacity>
+        )}
       </View>
 
-      {/* Breadcrumb Steps (Phim -> Suất -> Ghế -> Combo -> Trả tiền -> Vé QR) */}
+      {/* Breadcrumb Steps: Phim -> Suất -> Ghế -> Combo -> Trả tiền -> Vé QR */}
       <View style={styles.breadcrumbContainer}>
         <View style={styles.stepItem}>
           <Text style={styles.stepText}>Phim</Text>
@@ -371,7 +491,7 @@ export default function ConcessionsScreen({
           <View style={styles.stepIndicatorActive} />
         </View>
         <View style={styles.stepItem}>
-          <Text style={styles.stepText}>Trả tiền</Text>
+          <Text style={styles.stepText}>Xác nhận</Text>
         </View>
         <View style={styles.stepItem}>
           <Text style={styles.stepText}>Vé QR</Text>
@@ -404,9 +524,33 @@ export default function ConcessionsScreen({
         </View>
       </View>
 
+      {/* Search Bar */}
+      <View style={styles.searchContainer}>
+        <View style={styles.searchBox}>
+          <Text style={styles.searchIcon}>🔍</Text>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Tìm combo, bắp rang, nước ngọt, snack..."
+            placeholderTextColor="#71717A"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            clearButtonMode="while-editing"
+          />
+          {searchQuery !== '' && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Text style={styles.clearSearchText}>✕</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
       {/* Category Tabs */}
       <View style={styles.categoryBar}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryScroll}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoryScroll}
+        >
           {CATEGORIES.map((cat) => {
             const isActive = selectedCategory === cat.key;
             return (
@@ -429,7 +573,15 @@ export default function ConcessionsScreen({
       {loading ? (
         <View style={styles.loadingBox}>
           <ActivityIndicator size="large" color="#E50914" />
-          <Text style={styles.loadingText}>Đang tải danh mục bắp nước...</Text>
+          <Text style={styles.loadingText}>Đang tải danh mục bắp nước & combo...</Text>
+        </View>
+      ) : filteredItems.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyIcon}>🍿</Text>
+          <Text style={styles.emptyTitle}>Không tìm thấy món phù hợp</Text>
+          <Text style={styles.emptySubtitle}>
+            Vui lòng thử tìm kiếm với từ khóa khác hoặc chọn mục khác.
+          </Text>
         </View>
       ) : (
         <ScrollView
@@ -438,7 +590,7 @@ export default function ConcessionsScreen({
           showsVerticalScrollIndicator={false}
         >
           {filteredItems.map((item) => {
-            const quantity = cart[item.id] || 0;
+            const quantity = cart[item.id]?.quantity || 0;
             const isPicked = quantity > 0;
 
             return (
@@ -507,7 +659,15 @@ export default function ConcessionsScreen({
             );
           })}
 
-          <View style={{ height: 130 }} />
+          {/* Quick Counter Info */}
+          <View style={styles.counterNoticeBox}>
+            <Text style={styles.counterNoticeIcon}>🥤</Text>
+            <Text style={styles.counterNoticeText}>
+              Bắp nước sẽ được chuẩn bị sẵn sàng và nhận tại Quầy Bắp Nước CineNow bằng cách quét mã vé khi tới rạp.
+            </Text>
+          </View>
+
+          <View style={{ height: 140 }} />
         </ScrollView>
       )}
 
@@ -519,10 +679,18 @@ export default function ConcessionsScreen({
             <Text style={styles.breakdownValue}>{seatTotal.toLocaleString('vi-VN')}đ</Text>
           </View>
           {concessionsTotal > 0 && (
-            <View style={styles.breakdownRow}>
-              <Text style={styles.breakdownLabel}>Bắp & Nước ({totalQuantity} món):</Text>
-              <Text style={styles.breakdownValue}>+{concessionsTotal.toLocaleString('vi-VN')}đ</Text>
-            </View>
+            <TouchableOpacity
+              style={styles.breakdownRow}
+              onPress={() => setShowCartDrawer(true)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.breakdownLabelConcession}>
+                🍿 Bắp nước ({totalQuantity} món) ▾
+              </Text>
+              <Text style={styles.breakdownValueConcession}>
+                +{concessionsTotal.toLocaleString('vi-VN')}đ
+              </Text>
+            </TouchableOpacity>
           )}
           <View style={styles.totalRow}>
             <Text style={styles.totalTitle}>Tổng cộng:</Text>
@@ -535,7 +703,7 @@ export default function ConcessionsScreen({
         <View style={styles.actionsRow}>
           <TouchableOpacity
             style={styles.skipButton}
-            onPress={() => handleConfirmOrder(true)}
+            onPress={() => handleOpenConfirmModal(true)}
             disabled={submitting}
             activeOpacity={0.7}
           >
@@ -544,7 +712,7 @@ export default function ConcessionsScreen({
 
           <TouchableOpacity
             style={[styles.confirmButton, submitting && styles.confirmButtonDisabled]}
-            onPress={() => handleConfirmOrder(false)}
+            onPress={() => handleOpenConfirmModal(false)}
             disabled={submitting}
             activeOpacity={0.85}
           >
@@ -558,6 +726,171 @@ export default function ConcessionsScreen({
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Cart Drawer / Bottom Sheet Modal */}
+      <Modal
+        visible={showCartDrawer}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCartDrawer(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.cartModalBox}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>🍿 Giỏ hàng bắp nước ({totalQuantity})</Text>
+              <TouchableOpacity
+                onPress={() => setShowCartDrawer(false)}
+                style={styles.modalCloseBtn}
+              >
+                <Text style={styles.modalCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            {selectedConcessionsList.length === 0 ? (
+              <View style={styles.emptyCartBox}>
+                <Text style={styles.emptyCartText}>Chưa có món bắp nước nào được chọn.</Text>
+              </View>
+            ) : (
+              <ScrollView style={styles.cartList} showsVerticalScrollIndicator={false}>
+                {selectedConcessionsList.map((item) => (
+                  <View key={item.id} style={styles.cartItemRow}>
+                    <Image source={{ uri: item.image }} style={styles.cartItemImg} />
+                    <View style={styles.cartItemInfo}>
+                      <Text style={styles.cartItemName} numberOfLines={1}>
+                        {item.name}
+                      </Text>
+                      <Text style={styles.cartItemPrice}>
+                        {item.price.toLocaleString('vi-VN')}đ
+                      </Text>
+                    </View>
+
+                    <View style={styles.stepperContainer}>
+                      <TouchableOpacity
+                        style={styles.stepperBtn}
+                        onPress={() => handleDecrement(item.id)}
+                      >
+                        <Text style={styles.stepperBtnText}>−</Text>
+                      </TouchableOpacity>
+                      <Text style={styles.stepperQty}>{item.quantity}</Text>
+                      <TouchableOpacity
+                        style={[styles.stepperBtn, styles.stepperBtnPlus]}
+                        onPress={() => handleIncrement(item.id)}
+                      >
+                        <Text style={styles.stepperBtnText}>+</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <TouchableOpacity
+                      onPress={() => handleClearItem(item.id)}
+                      style={styles.deleteCartItemBtn}
+                    >
+                      <Text style={styles.deleteCartItemText}>🗑️</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+
+            <View style={styles.cartModalFooter}>
+              <View style={styles.cartModalTotalRow}>
+                <Text style={styles.cartModalTotalLabel}>Tiền bắp nước:</Text>
+                <Text style={styles.cartModalTotalValue}>
+                  {concessionsTotal.toLocaleString('vi-VN')}đ
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.cartModalConfirmBtn}
+                onPress={() => setShowCartDrawer(false)}
+              >
+                <Text style={styles.cartModalConfirmText}>Xong</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Order Confirmation Summary Modal */}
+      <Modal
+        visible={showOrderModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowOrderModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.summaryModalBox}>
+            <Text style={styles.summaryModalTitle}>XÁC NHẬN ĐƠN ĐẶT VÉ</Text>
+
+            <ScrollView style={styles.summaryScroll} showsVerticalScrollIndicator={false}>
+              <View style={styles.summarySection}>
+                <Text style={styles.summarySectionTitle}>🎬 Thông tin suất chiếu</Text>
+                <Text style={styles.summaryLineBold}>{movieTitle}</Text>
+                <Text style={styles.summaryLine}>{cinemaName} • {roomName}</Text>
+                <Text style={styles.summaryLine}>Suất: {showTime} ({showDate})</Text>
+                <Text style={styles.summaryLine}>Ghế: <Text style={styles.highlightRed}>{selectedSeats.join(', ')}</Text></Text>
+                <Text style={styles.summaryLinePrice}>Tiền vé: {seatTotal.toLocaleString('vi-VN')}đ</Text>
+              </View>
+
+              <View style={styles.summarySection}>
+                <Text style={styles.summarySectionTitle}>🍿 Bắp nước & Combo</Text>
+                {selectedConcessionsList.length === 0 ? (
+                  <Text style={styles.summaryLineMuted}>Không chọn bắp nước</Text>
+                ) : (
+                  selectedConcessionsList.map((c) => (
+                    <View key={c.id} style={styles.summaryConcessionRow}>
+                      <Text style={styles.summaryConcessionName}>
+                        {c.quantity}x {c.name}
+                      </Text>
+                      <Text style={styles.summaryConcessionPrice}>
+                        {c.total.toLocaleString('vi-VN')}đ
+                      </Text>
+                    </View>
+                  ))
+                )}
+                {concessionsTotal > 0 && (
+                  <Text style={styles.summaryLinePrice}>
+                    Tiền bắp nước: +{concessionsTotal.toLocaleString('vi-VN')}đ
+                  </Text>
+                )}
+              </View>
+
+              <View style={styles.summaryNoticeBox}>
+                <Text style={styles.summaryNoticeText}>
+                  🎟️ Quý khách xuất trình mã vé tại cổng soát vé và quầy bắp nước để nhận dịch vụ.
+                </Text>
+              </View>
+
+              <View style={styles.summaryTotalBox}>
+                <Text style={styles.summaryTotalLabel}>TỔNG THANH TOÁN:</Text>
+                <Text style={styles.summaryTotalValue}>
+                  {grandTotal.toLocaleString('vi-VN')} VNĐ
+                </Text>
+              </View>
+            </ScrollView>
+
+            <View style={styles.summaryModalActions}>
+              <TouchableOpacity
+                style={styles.summaryCancelBtn}
+                onPress={() => setShowOrderModal(false)}
+                disabled={submitting}
+              >
+                <Text style={styles.summaryCancelText}>Xem lại</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.summarySubmitBtn, submitting && styles.confirmButtonDisabled]}
+                onPress={() => handleConfirmOrder(false)}
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.summarySubmitText}>Hoàn tất đặt vé</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -570,6 +903,7 @@ const styles = StyleSheet.create({
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
@@ -587,6 +921,29 @@ const styles = StyleSheet.create({
   topBarTitle: {
     color: '#FFFFFF',
     fontSize: 18,
+    fontWeight: 'bold',
+  },
+  cartHeaderButton: {
+    position: 'relative',
+    padding: 6,
+  },
+  cartHeaderIcon: {
+    fontSize: 22,
+  },
+  cartBadge: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    backgroundColor: '#E50914',
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cartBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
     fontWeight: 'bold',
   },
   breadcrumbContainer: {
@@ -677,6 +1034,35 @@ const styles = StyleSheet.create({
     color: '#A1A1AA',
     fontSize: 12,
   },
+  searchContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#18181B',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    height: 40,
+    borderWidth: 1,
+    borderColor: '#27272A',
+  },
+  searchIcon: {
+    fontSize: 15,
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 13,
+    paddingVertical: 0,
+  },
+  clearSearchText: {
+    color: '#71717A',
+    fontSize: 14,
+    paddingHorizontal: 4,
+  },
   categoryBar: {
     paddingVertical: 10,
   },
@@ -714,6 +1100,27 @@ const styles = StyleSheet.create({
     color: '#A1A1AA',
     marginTop: 12,
     fontSize: 14,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 30,
+  },
+  emptyIcon: {
+    fontSize: 48,
+    marginBottom: 12,
+  },
+  emptyTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  emptySubtitle: {
+    color: '#71717A',
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 6,
   },
   itemsScroll: {
     flex: 1,
@@ -807,12 +1214,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#27272A',
     borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#3F3F46',
     overflow: 'hidden',
   },
   stepperBtn: {
     paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: '#333338',
+    paddingVertical: 4,
+    backgroundColor: '#1F1F23',
   },
   stepperBtnPlus: {
     backgroundColor: '#E50914',
@@ -828,17 +1237,33 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     paddingHorizontal: 10,
   },
+  counterNoticeBox: {
+    flexDirection: 'row',
+    backgroundColor: '#1A1A1E',
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 6,
+    marginBottom: 16,
+    borderLeftWidth: 3,
+    borderLeftColor: '#3B82F6',
+  },
+  counterNoticeIcon: {
+    fontSize: 18,
+    marginRight: 10,
+  },
+  counterNoticeText: {
+    color: '#A1A1AA',
+    fontSize: 12,
+    lineHeight: 17,
+    flex: 1,
+  },
   bottomBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#121212',
+    backgroundColor: '#121214',
     borderTopWidth: 1,
-    borderTopColor: '#262626',
+    borderTopColor: '#222226',
     paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 20,
+    paddingTop: 10,
+    paddingBottom: 16,
   },
   priceBreakdown: {
     marginBottom: 10,
@@ -849,22 +1274,32 @@ const styles = StyleSheet.create({
     marginBottom: 3,
   },
   breakdownLabel: {
-    color: '#8E8E93',
+    color: '#A1A1AA',
     fontSize: 12,
   },
   breakdownValue: {
-    color: '#CCCCCC',
+    color: '#FFFFFF',
     fontSize: 12,
-    fontWeight: '500',
+    fontWeight: '600',
+  },
+  breakdownLabelConcession: {
+    color: '#F59E0B',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  breakdownValueConcession: {
+    color: '#F59E0B',
+    fontSize: 12,
+    fontWeight: '700',
   },
   totalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginTop: 4,
-    paddingTop: 6,
+    paddingTop: 4,
     borderTopWidth: 1,
-    borderTopColor: '#262626',
+    borderTopColor: '#27272A',
   },
   totalTitle: {
     color: '#FFFFFF',
@@ -872,41 +1307,290 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   grandTotalPrice: {
-    color: '#E50914',
+    color: '#4CD964',
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '900',
   },
   actionsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    gap: 12,
   },
   skipButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    backgroundColor: '#222222',
-    marginRight: 10,
+    flex: 1,
+    height: 46,
+    borderRadius: 10,
+    backgroundColor: '#27272A',
+    justifyContent: 'center',
+    alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#333333',
+    borderColor: '#3F3F46',
   },
   skipButtonText: {
-    color: '#AAAAAA',
+    color: '#D4D4D8',
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: 'bold',
   },
   confirmButton: {
-    flex: 1,
+    flex: 2,
+    height: 46,
+    borderRadius: 10,
     backgroundColor: '#E50914',
-    paddingVertical: 13,
-    borderRadius: 8,
+    justifyContent: 'center',
     alignItems: 'center',
   },
   confirmButtonDisabled: {
-    backgroundColor: '#77151A',
+    opacity: 0.6,
   },
   confirmButtonText: {
     color: '#FFFFFF',
-    fontSize: 15,
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'flex-end',
+  },
+  cartModalBox: {
+    backgroundColor: '#18181B',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#27272A',
+  },
+  modalTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  modalCloseBtn: {
+    padding: 4,
+  },
+  modalCloseText: {
+    color: '#A1A1AA',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  emptyCartBox: {
+    paddingVertical: 30,
+    alignItems: 'center',
+  },
+  emptyCartText: {
+    color: '#71717A',
+    fontSize: 14,
+  },
+  cartList: {
+    maxHeight: 280,
+  },
+  cartItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#222226',
+  },
+  cartItemImg: {
+    width: 46,
+    height: 46,
+    borderRadius: 8,
+    backgroundColor: '#27272A',
+  },
+  cartItemInfo: {
+    flex: 1,
+    marginLeft: 10,
+    marginRight: 8,
+  },
+  cartItemName: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  cartItemPrice: {
+    color: '#4CD964',
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginTop: 2,
+  },
+  deleteCartItemBtn: {
+    padding: 8,
+    marginLeft: 6,
+  },
+  deleteCartItemText: {
+    fontSize: 16,
+  },
+  cartModalFooter: {
+    marginTop: 16,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#27272A',
+  },
+  cartModalTotalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  cartModalTotalLabel: {
+    color: '#A1A1AA',
+    fontSize: 14,
+  },
+  cartModalTotalValue: {
+    color: '#F59E0B',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  cartModalConfirmBtn: {
+    backgroundColor: '#E50914',
+    height: 44,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cartModalConfirmText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  summaryModalBox: {
+    backgroundColor: '#18181B',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    maxHeight: '85%',
+  },
+  summaryModalTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 16,
+    letterSpacing: 0.8,
+  },
+  summaryScroll: {
+    maxHeight: 380,
+  },
+  summarySection: {
+    backgroundColor: '#202024',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+  },
+  summarySectionTitle: {
+    color: '#E50914',
+    fontSize: 13,
+    fontWeight: 'bold',
+    marginBottom: 6,
+  },
+  summaryLineBold: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 3,
+  },
+  summaryLine: {
+    color: '#D4D4D8',
+    fontSize: 12,
+    marginBottom: 2,
+  },
+  summaryLineMuted: {
+    color: '#71717A',
+    fontSize: 12,
+    fontStyle: 'italic',
+  },
+  highlightRed: {
+    color: '#E50914',
+    fontWeight: 'bold',
+  },
+  summaryLinePrice: {
+    color: '#4CD964',
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginTop: 6,
+    textAlign: 'right',
+  },
+  summaryConcessionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 2,
+  },
+  summaryConcessionName: {
+    color: '#D4D4D8',
+    fontSize: 12,
+    flex: 1,
+  },
+  summaryConcessionPrice: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  summaryNoticeBox: {
+    backgroundColor: '#1E1B15',
+    borderWidth: 1,
+    borderColor: '#78350F',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+  },
+  summaryNoticeText: {
+    color: '#FBBF24',
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  summaryTotalBox: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#27272A',
+  },
+  summaryTotalLabel: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  summaryTotalValue: {
+    color: '#4CD964',
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  summaryModalActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 14,
+  },
+  summaryCancelBtn: {
+    flex: 1,
+    height: 46,
+    borderRadius: 10,
+    backgroundColor: '#27272A',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  summaryCancelText: {
+    color: '#D4D4D8',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  summarySubmitBtn: {
+    flex: 2,
+    height: 46,
+    borderRadius: 10,
+    backgroundColor: '#E50914',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  summarySubmitText: {
+    color: '#FFFFFF',
+    fontSize: 14,
     fontWeight: 'bold',
   },
 });

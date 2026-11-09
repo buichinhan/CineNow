@@ -26,12 +26,18 @@ const TABS = [
   { key: 'cancelled', label: 'Đã hủy' },
 ];
 
-export default function MyTicketsScreen({ onBack }) {
-  const [tickets, setTickets] = useState(initialTickets);
+export default function MyTicketsScreen({ onBack, tickets: externalTickets, onTicketsChange }) {
+  const [tickets, setTickets] = useState(externalTickets || initialTickets);
   const [activeTab, setActiveTab] = useState('confirmed');
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [ticketToCancel, setTicketToCancel] = useState(null);
   const [cancelModalVisible, setCancelModalVisible] = useState(false);
+
+  React.useEffect(() => {
+    if (externalTickets && Array.isArray(externalTickets)) {
+      setTickets(externalTickets);
+    }
+  }, [externalTickets]);
 
   const filteredTickets = tickets.filter(
     (ticket) => ticket.status === activeTab
@@ -54,17 +60,20 @@ export default function MyTicketsScreen({ onBack }) {
       return;
     }
 
-    setTickets((previousTickets) =>
-      previousTickets.map((item) =>
-        item.id === ticketId
-          ? {
-              ...item,
-              status: 'cancelled',
-              refundStatus: 'Đang xử lý hoàn tiền (90%)',
-            }
-          : item
-      )
+    const updatedTickets = tickets.map((item) =>
+      item.id === ticketId
+        ? {
+            ...item,
+            status: 'cancelled',
+            refundStatus: 'Đang xử lý hoàn tiền (90%)',
+          }
+        : item
     );
+
+    setTickets(updatedTickets);
+    if (onTicketsChange) {
+      onTicketsChange(updatedTickets);
+    }
 
     setCancelModalVisible(false);
     setTicketToCancel(null);
