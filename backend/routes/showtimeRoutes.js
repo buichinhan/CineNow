@@ -415,12 +415,6 @@ let finalDates = dates;
 let finalCinemas = cinemas;
 let finalSelectedDate = selectedDate;
 
-if (finalCinemas.length === 0 && (!manage || manage === 'false')) {
-  finalDates = SHOWTIME_DATES;
-  finalCinemas = SHOWTIME_CINEMAS;
-  finalSelectedDate = date || SHOWTIME_DATES[0]?.id;
-}
-
 return res.json({
   success: true,
   count: finalCinemas.length > 0 ? (availableShowtimes.length || finalCinemas.length) : 0,
