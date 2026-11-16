@@ -16,8 +16,10 @@ const sampleVouchers = [
     startDate: new Date(),
     endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 ngày tới
     totalLimit: 500,
+    usedCount: 0,
     usageLimitPerUser: 1,
     applicableFormats: ['2D', '3D', 'IMAX'],
+    isActive: true,
   },
   {
     code: 'CINEVIP20',
@@ -30,8 +32,10 @@ const sampleVouchers = [
     startDate: new Date(),
     endDate: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000), // 60 ngày tới
     totalLimit: 1000,
+    usedCount: 0,
     usageLimitPerUser: 2,
     applicableFormats: ['2D', '3D'],
+    isActive: true,
   },
   {
     code: 'POPCORNFREE',
@@ -44,7 +48,9 @@ const sampleVouchers = [
     startDate: new Date(),
     endDate: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000),
     totalLimit: 300,
+    usedCount: 0,
     usageLimitPerUser: 1,
+    isActive: true,
   },
   {
     code: 'WEDHAPPY',
@@ -56,8 +62,10 @@ const sampleVouchers = [
     startDate: new Date(),
     endDate: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
     totalLimit: 2000,
+    usedCount: 0,
     usageLimitPerUser: 5,
     applicableFormats: ['2D'],
+    isActive: true,
   },
   {
     code: 'IMAXVIP',
@@ -70,8 +78,67 @@ const sampleVouchers = [
     startDate: new Date(),
     endDate: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
     totalLimit: 200,
+    usedCount: 0,
     usageLimitPerUser: 2,
     applicableFormats: ['IMAX'],
+    isActive: true,
+  },
+  // Voucher kiểm thử các trường hợp ngoại lệ
+  {
+    code: 'EXPIRED10',
+    title: 'Voucher đã hết hạn thử nghiệm',
+    description: 'Dùng để kiểm thử hệ thống báo lỗi khi voucher hết hạn.',
+    discountType: 'PERCENTAGE',
+    discountValue: 10,
+    minOrderAmount: 50000,
+    startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+    endDate: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000), // Đã hết hạn hôm qua
+    totalLimit: 100,
+    usedCount: 0,
+    usageLimitPerUser: 1,
+    isActive: true,
+  },
+  {
+    code: 'FUTURE10',
+    title: 'Voucher chưa đến ngày sử dụng',
+    description: 'Dùng để kiểm thử hệ thống báo lỗi khi voucher chưa đến ngày áp dụng.',
+    discountType: 'PERCENTAGE',
+    discountValue: 10,
+    minOrderAmount: 50000,
+    startDate: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000), // 10 ngày sau mới bắt đầu
+    endDate: new Date(Date.now() + 40 * 24 * 60 * 60 * 1000),
+    totalLimit: 100,
+    usedCount: 0,
+    usageLimitPerUser: 1,
+    isActive: true,
+  },
+  {
+    code: 'SOLDOUT',
+    title: 'Voucher hết lượt sử dụng',
+    description: 'Dùng để kiểm thử hệ thống báo lỗi khi voucher đã hết số lượt phát hành.',
+    discountType: 'FIXED_AMOUNT',
+    discountValue: 20000,
+    minOrderAmount: 50000,
+    startDate: new Date(),
+    endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    totalLimit: 10,
+    usedCount: 10, // Đã dùng hết 10/10
+    usageLimitPerUser: 1,
+    isActive: true,
+  },
+  {
+    code: 'MIN500K',
+    title: 'Voucher đơn lớn tối thiểu 500.000đ',
+    description: 'Dùng để kiểm thử điều kiện giá trị đơn hàng tối thiểu.',
+    discountType: 'FIXED_AMOUNT',
+    discountValue: 100000,
+    minOrderAmount: 500000,
+    startDate: new Date(),
+    endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    totalLimit: 100,
+    usedCount: 0,
+    usageLimitPerUser: 1,
+    isActive: true,
   },
 ];
 
@@ -98,4 +165,8 @@ async function seed() {
   }
 }
 
-seed();
+if (require.main === module) {
+  seed();
+}
+
+module.exports = { sampleVouchers, seed };

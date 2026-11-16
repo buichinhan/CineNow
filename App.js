@@ -20,15 +20,25 @@ import SeatSelectionScreen from './seatSelection';
 import ConcessionsScreen from './concessions';
 import MovieCatalogScreen from './screens/MovieCatalogScreen';
 import MyTicketsScreen from './screens/MyTicketsScreen';
+import VoucherScreen from './screens/VoucherScreen';
+import BookingCheckoutDemoScreen from './screens/BookingCheckoutDemoScreen';
 import { initialTickets } from './data/mockTickets';
+import { API_BASE_URL } from './apiConfig';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('splash');
   const [activeTab, setActiveTab] = useState('home');
   const [user, setUser] = useState(null);
+  const [token, setToken] = useState(null);
   const [selectedMovie, setSelectedMovie] = useState(null);
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [tickets, setTickets] = useState(initialTickets);
+  const [selectedVoucherForCheckout, setSelectedVoucherForCheckout] = useState(null);
+
+  // Modal lịch sử điểm
+  const [loyaltyHistoryVisible, setLoyaltyHistoryVisible] = useState(false);
+  const [loyaltyHistory, setLoyaltyHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   useEffect(() => {
     if (currentScreen !== 'splash') {
@@ -44,6 +54,7 @@ export default function App() {
 
   const handleLoginSuccess = (data) => {
     setUser(data.user);
+    setToken(data.token);
     setCurrentScreen('home');
     setActiveTab('home');
   };
@@ -62,8 +73,10 @@ export default function App() {
           style: 'destructive',
           onPress: () => {
             setUser(null);
+            setToken(null);
             setSelectedMovie(null);
             setSelectedBooking(null);
+            setSelectedVoucherForCheckout(null);
             setCurrentScreen('login');
           },
         },
@@ -107,6 +120,40 @@ export default function App() {
     setSelectedBooking(null);
     setCurrentScreen('home');
     setActiveTab('tickets');
+  };
+
+  const handleOpenLoyaltyHistory = async () => {
+    setLoyaltyHistoryVisible(true);
+    if (!token) {
+      setLoyaltyHistory([
+        {
+          _id: 'tx_demo_1',
+          type: 'EARN',
+          points: 120,
+          balanceAfter: user?.loyaltyPoints || 120,
+          description: 'Thưởng điểm hội viên CineNow mới',
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+      return;
+    }
+    try {
+      setLoadingHistory(true);
+      const res = await fetch(`${API_BASE_URL}/loyalty/history`, {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const json = await res.json();
+      if (json.success) {
+        setLoyaltyHistory(json.data || []);
+      }
+    } catch (err) {
+      console.warn('Lỗi tải lịch sử điểm:', err.message);
+    } finally {
+      setLoadingHistory(false);
+    }
   };
 
   // 1. Màn hình Đăng ký
@@ -188,12 +235,48 @@ export default function App() {
         seatTotal={selectedBooking?.seatTotal || 0}
         user={user}
         onBack={() => setCurrentScreen('seatSelection')}
+        onContinueToCheckout={(concessionsData) => {
+          setSelectedBooking((prev) => ({
+            ...prev,
+            ...concessionsData,
+          }));
+          setCurrentScreen('checkout');
+        }}
         onComplete={handleBookingComplete}
       />
     );
   }
 
-  // 7. Ứng dụng chính
+  // 7. Màn hình Thanh toán, Áp Voucher & Điểm thành viên (Checkout)
+  if (currentScreen === 'checkout') {
+    return (
+      <BookingCheckoutDemoScreen
+        movie={selectedMovie}
+        bookingData={selectedBooking}
+        selectedSeats={selectedBooking?.selectedSeats || []}
+        seatTotal={selectedBooking?.seatTotal || 0}
+        concessions={selectedBooking?.concessions || []}
+        concessionsTotal={selectedBooking?.concessionsTotal || 0}
+        user={user}
+        token={token}
+        initialVoucher={selectedVoucherForCheckout}
+        onBack={() => {
+          if (selectedBooking) {
+            setCurrentScreen('concessions');
+          } else {
+            setCurrentScreen('home');
+          }
+        }}
+        onNavigateToVoucherList={() => {
+          setCurrentScreen('home');
+          setActiveTab('vouchers');
+        }}
+        onComplete={handleBookingComplete}
+      />
+    );
+  }
+
+  // 8. Ứng dụng chính
   if (currentScreen === 'home') {
     return (
       <SafeAreaView style={styles.mainContainer}>
@@ -231,16 +314,29 @@ export default function App() {
             />
           )}
 
-          {/* TAB 3: VÉ CỦA TÔI */}
+          {/* TAB 3: ƯU ĐÃI & VOUCHER */}
+          {activeTab === 'vouchers' && (
+            <VoucherScreen
+              user={user}
+              token={token}
+              onNavigateToCheckout={(voucher) => {
+                setSelectedVoucherForCheckout(voucher);
+                setCurrentScreen('checkout');
+              }}
+            />
+          )}
+
+          {/* TAB 4: VÉ CỦA TÔI */}
           {activeTab === 'tickets' && (
             <MyTicketsScreen
               tickets={tickets}
+              token={token}
               onTicketsChange={setTickets}
               onBack={() => setActiveTab('home')}
             />
           )}
 
-          {/* TAB 4: TÀI KHOẢN */}
+          {/* TAB 5: TÀI KHOẢN & ĐIỂM THÀNH VIÊN */}
           {activeTab === 'profile' && (
             <ScrollView
               style={styles.profileContainer}
@@ -267,7 +363,60 @@ export default function App() {
                 </Text>
               </View>
 
+              {/* THẺ ĐIỂM THÀNH VIÊN */}
+              <View style={styles.memberCard}>
+                <View style={styles.memberCardHeader}>
+                  <Text style={styles.memberCardTitle}>⭐ HỘI VIÊN CINENOW</Text>
+                  <Text style={styles.memberTierBadge}>GOLD VIP</Text>
+                </View>
+                <View style={styles.memberPointsRow}>
+                  <View>
+                    <Text style={styles.memberPointsLabel}>Điểm tích lũy hiện có</Text>
+                    <Text style={styles.memberPointsValue}>
+                      {(user?.loyaltyPoints || 120).toLocaleString('vi-VN')}{' '}
+                      <Text style={styles.memberPointsUnit}>điểm</Text>
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.memberHistoryBtn}
+                    onPress={handleOpenLoyaltyHistory}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.memberHistoryBtnText}>Lịch sử điểm ›</Text>
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.memberRateNote}>
+                  Tương đương {((user?.loyaltyPoints || 120) * 1000).toLocaleString('vi-VN')}đ tiền giảm giá khi đặt vé (1 điểm = 1.000đ)
+                </Text>
+              </View>
+
               <View style={styles.profileMenu}>
+                <TouchableOpacity
+                  style={styles.profileMenuItem}
+                  onPress={() => setActiveTab('vouchers')}
+                >
+                  <Text style={styles.profileMenuIcon}>🎟️</Text>
+                  <Text style={styles.profileMenuText}>
+                    Kho Voucher & Ví ưu đãi
+                  </Text>
+                  <Text style={styles.profileMenuArrow}>›</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.profileMenuItem}
+                  onPress={() => {
+                    setSelectedBooking(null);
+                    setSelectedVoucherForCheckout(null);
+                    setCurrentScreen('checkout');
+                  }}
+                >
+                  <Text style={styles.profileMenuIcon}>🍿</Text>
+                  <Text style={styles.profileMenuText}>
+                    Thử Đặt Vé & Áp Voucher (Demo)
+                  </Text>
+                  <Text style={styles.profileMenuArrow}>›</Text>
+                </TouchableOpacity>
+
                 <TouchableOpacity
                   style={styles.profileMenuItem}
                   onPress={() => setActiveTab('movies')}
@@ -275,17 +424,6 @@ export default function App() {
                   <Text style={styles.profileMenuIcon}>🎬</Text>
                   <Text style={styles.profileMenuText}>
                     Duyệt danh mục phim
-                  </Text>
-                  <Text style={styles.profileMenuArrow}>›</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.profileMenuItem}
-                  onPress={() => setActiveTab('home')}
-                >
-                  <Text style={styles.profileMenuIcon}>🎟️</Text>
-                  <Text style={styles.profileMenuText}>
-                    Phim đang chiếu & Đặt vé
                   </Text>
                   <Text style={styles.profileMenuArrow}>›</Text>
                 </TouchableOpacity>
@@ -318,6 +456,59 @@ export default function App() {
           )}
         </View>
 
+        {/* MODAL LỊCH SỬ ĐIỂM THÀNH VIÊN */}
+        {loyaltyHistoryVisible && (
+          <View style={styles.historyModalOverlay}>
+            <View style={styles.historyModalContent}>
+              <View style={styles.historyModalHeader}>
+                <Text style={styles.historyModalTitle}>Lịch sử biến động điểm</Text>
+                <TouchableOpacity
+                  onPress={() => setLoyaltyHistoryVisible(false)}
+                  style={styles.historyCloseBtn}
+                >
+                  <Text style={styles.historyCloseText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+
+              {loadingHistory ? (
+                <View style={styles.historyLoadingBox}>
+                  <Text style={styles.historyLoadingText}>Đang tải lịch sử điểm...</Text>
+                </View>
+              ) : loyaltyHistory.length === 0 ? (
+                <View style={styles.historyEmptyBox}>
+                  <Text style={styles.historyEmptyText}>Chưa có giao dịch điểm nào.</Text>
+                </View>
+              ) : (
+                <ScrollView style={styles.historyList}>
+                  {loyaltyHistory.map((item, idx) => (
+                    <View key={item._id || idx} style={styles.historyItem}>
+                      <View style={styles.historyItemLeft}>
+                        <Text style={styles.historyItemDesc}>{item.description}</Text>
+                        <Text style={styles.historyItemDate}>
+                          {item.createdAt ? new Date(item.createdAt).toLocaleString('vi-VN') : 'Gần đây'}
+                        </Text>
+                      </View>
+                      <View style={styles.historyItemRight}>
+                        <Text
+                          style={[
+                            styles.historyItemPoints,
+                            item.points > 0 ? styles.pointsEarn : styles.pointsSpend,
+                          ]}
+                        >
+                          {item.points > 0 ? `+${item.points}` : `${item.points}`} điểm
+                        </Text>
+                        <Text style={styles.historyBalanceAfter}>
+                          Dư: {item.balanceAfter} điểm
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
+                </ScrollView>
+              )}
+            </View>
+          </View>
+        )}
+
         {/* THANH ĐIỀU HƯỚNG DƯỚI */}
         <View style={styles.bottomNav}>
           <TouchableOpacity
@@ -333,7 +524,6 @@ export default function App() {
             >
               🏠
             </Text>
-
             <Text
               style={[
                 styles.navLabel,
@@ -357,7 +547,6 @@ export default function App() {
             >
               🔍
             </Text>
-
             <Text
               style={[
                 styles.navLabel,
@@ -365,6 +554,29 @@ export default function App() {
               ]}
             >
               Duyệt phim
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.navItem}
+            onPress={() => setActiveTab('vouchers')}
+            activeOpacity={0.8}
+          >
+            <Text
+              style={[
+                styles.navIcon,
+                activeTab === 'vouchers' && styles.navIconActive,
+              ]}
+            >
+              🎟️
+            </Text>
+            <Text
+              style={[
+                styles.navLabel,
+                activeTab === 'vouchers' && styles.navLabelActive,
+              ]}
+            >
+              Voucher
             </Text>
           </TouchableOpacity>
 
@@ -381,7 +593,6 @@ export default function App() {
             >
               🎫
             </Text>
-
             <Text
               style={[
                 styles.navLabel,
@@ -405,7 +616,6 @@ export default function App() {
             >
               👤
             </Text>
-
             <Text
               style={[
                 styles.navLabel,
@@ -574,5 +784,174 @@ const styles = StyleSheet.create({
   navLabelActive: {
     color: '#E50914',
     fontWeight: 'bold',
+  },
+
+  // THẺ HỘI VIÊN & ĐIỂM
+  memberCard: {
+    width: '100%',
+    backgroundColor: '#1E1810',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#4A3B18',
+    padding: 16,
+    marginBottom: 20,
+  },
+  memberCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  memberCardTitle: {
+    color: '#FFD700',
+    fontSize: 13,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
+  },
+  memberTierBadge: {
+    backgroundColor: '#FFD700',
+    color: '#000000',
+    fontSize: 10,
+    fontWeight: 'bold',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  memberPointsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  memberPointsLabel: {
+    color: '#A09882',
+    fontSize: 12,
+  },
+  memberPointsValue: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    fontWeight: 'bold',
+  },
+  memberPointsUnit: {
+    fontSize: 14,
+    color: '#FFD700',
+    fontWeight: 'normal',
+  },
+  memberHistoryBtn: {
+    backgroundColor: '#352912',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#614B1F',
+  },
+  memberHistoryBtnText: {
+    color: '#FFD700',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  memberRateNote: {
+    color: '#8A8068',
+    fontSize: 11,
+    marginTop: 4,
+  },
+
+  // MODAL LỊCH SỬ ĐIỂM
+  historyModalOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'flex-end',
+    zIndex: 999,
+  },
+  historyModalContent: {
+    backgroundColor: '#181818',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '75%',
+    padding: 16,
+  },
+  historyModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#282828',
+    marginBottom: 12,
+  },
+  historyModalTitle: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: 'bold',
+  },
+  historyCloseBtn: {
+    padding: 4,
+  },
+  historyCloseText: {
+    color: '#8A8A8A',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  historyLoadingBox: {
+    padding: 30,
+    alignItems: 'center',
+  },
+  historyLoadingText: {
+    color: '#8A8A8A',
+    fontSize: 13,
+  },
+  historyEmptyBox: {
+    padding: 30,
+    alignItems: 'center',
+  },
+  historyEmptyText: {
+    color: '#777777',
+    fontSize: 13,
+  },
+  historyList: {
+    paddingBottom: 20,
+  },
+  historyItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#242424',
+  },
+  historyItemLeft: {
+    flex: 1,
+    paddingRight: 10,
+  },
+  historyItemDesc: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  historyItemDate: {
+    color: '#777777',
+    fontSize: 11,
+  },
+  historyItemRight: {
+    alignItems: 'flex-end',
+  },
+  historyItemPoints: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  pointsEarn: {
+    color: '#4ADE80',
+  },
+  pointsSpend: {
+    color: '#FF6B72',
+  },
+  historyBalanceAfter: {
+    color: '#8A8A8A',
+    fontSize: 11,
+    marginTop: 2,
   },
 });

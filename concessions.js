@@ -201,6 +201,7 @@ export default function ConcessionsScreen({
   user,
   onBack,
   onComplete,
+  onContinueToCheckout,
 }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -358,6 +359,15 @@ export default function ConcessionsScreen({
   const showTime = bookingData?.time || '19:00';
 
   const handleOpenConfirmModal = (skip = false) => {
+    if (onContinueToCheckout) {
+      const finalConcessions = skip ? [] : selectedConcessionsList;
+      const finalConcessionsTotal = skip ? 0 : concessionsTotal;
+      onContinueToCheckout({
+        concessions: finalConcessions,
+        concessionsTotal: finalConcessionsTotal,
+      });
+      return;
+    }
     if (skip) {
       handleConfirmOrder(true);
     } else {
