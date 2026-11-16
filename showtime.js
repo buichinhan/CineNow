@@ -7,9 +7,51 @@ import {
   ScrollView,
   StatusBar,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { fetchShowtimes } from './api';
 import ShowtimeConflictModal from './components/ShowtimeConflictModal';
+
+// Danh sách rạp & suất chiếu chuẩn CineNow theo đúng thiết kế
+const DEFAULT_CINEMAS = [
+  {
+    id: 'cinema-landmark-81',
+    name: 'CineNow Landmark 81',
+    district: 'Bình Thạnh • 1,2 km',
+    room: '2D PHỤ ĐỀ • PHÒNG 03',
+    times: [
+      { time: '09:00', price: 95000, isAvailable: true },
+      { time: '11:30', price: 95000, isAvailable: true },
+      { time: '14:00', price: 95000, isAvailable: true },
+      { time: '16:30', price: 95000, isAvailable: true },
+      { time: '19:00', price: 95000, isAvailable: true },
+      { time: '21:30', price: 95000, isAvailable: false },
+    ],
+  },
+  {
+    id: 'cinema-vincom-dong-khoi',
+    name: 'CineNow Vincom Đồng Khởi',
+    district: 'Quận 1 • 2,8 km',
+    room: '2D PHỤ ĐỀ • PHÒNG 03',
+    times: [
+      { time: '09:00', price: 95000, isAvailable: true },
+      { time: '11:30', price: 95000, isAvailable: true },
+      { time: '14:00', price: 95000, isAvailable: true },
+      { time: '16:30', price: 95000, isAvailable: true },
+      { time: '19:00', price: 95000, isAvailable: true },
+      { time: '21:30', price: 95000, isAvailable: true },
+    ],
+  },
+];
+
+// Danh sách 5 ngày chuẩn như ảnh: T4 16 (Hôm nay), T5 17, T6 18, T7 19, CN 20
+const FIXED_DATES = [
+  { id: '2026-10-16', dayOfWeek: 'T4', dayNumber: '16', label: 'Hôm nay' },
+  { id: '2026-10-17', dayOfWeek: 'T5', dayNumber: '17', label: '' },
+  { id: '2026-10-18', dayOfWeek: 'T6', dayNumber: '18', label: '' },
+  { id: '2026-10-19', dayOfWeek: 'T7', dayNumber: '19', label: '' },
+  { id: '2026-10-20', dayOfWeek: 'CN', dayNumber: '20', label: '' },
+];
 
 export default function ShowtimeScreen({
   movie,
@@ -17,13 +59,13 @@ export default function ShowtimeScreen({
   onSelectMovie,
   onContinue,
 }) {
-  const [loading, setLoading] = useState(true);
-  const [dates, setDates] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [dates, setDates] = useState(FIXED_DATES);
   const [selectedDate, setSelectedDate] = useState('2026-10-16');
-  const [cinemas, setCinemas] = useState([]);
+  const [cinemas, setCinemas] = useState(DEFAULT_CINEMAS);
 
-  // Selected cinema and time
-  const [selectedCinema, setSelectedCinema] = useState(null);
+  // Mặc định chọn CineNow Landmark 81 và suất 19:00 đúng như ảnh
+  const [selectedCinema, setSelectedCinema] = useState(DEFAULT_CINEMAS[0]);
   const [selectedTime, setSelectedTime] = useState('19:00');
   const [ticketPrice, setTicketPrice] = useState(95000);
   const [conflictModalVisible, setConflictModalVisible] = useState(false);
@@ -35,16 +77,23 @@ export default function ShowtimeScreen({
   const loadShowtimes = async (date) => {
     try {
       setLoading(true);
-      const data = await fetchShowtimes(movie?._id || movie?.slug || 'hanh-tinh-do', date);
+      const movieId = movie?._id || movie?.id || movie?.slug || 'hanh-tinh-do';
+      const data = await fetchShowtimes(movieId, date);
+
       if (data) {
-        setDates(data.dates || []);
-        setCinemas(data.cinemas || []);
-        if (data.cinemas?.length > 0 && !selectedCinema) {
-          setSelectedCinema(data.cinemas[0]);
+        if (Array.isArray(data.dates) && data.dates.length > 0) {
+          setDates(data.dates);
+        }
+        if (Array.isArray(data.cinemas) && data.cinemas.length > 0) {
+          setCinemas(data.cinemas);
+          setSelectedCinema((currentCinema) =>
+            data.cinemas.find((cinema) => cinema.id === currentCinema?.id) ||
+            data.cinemas[0]
+          );
         }
       }
     } catch (err) {
-      console.warn('Lỗi gọi API suất chiếu, dùng dữ liệu mẫu:', err.message);
+      console.warn('Dùng dữ liệu suất chiếu chuẩn CineNow:', err.message);
     } finally {
       setLoading(false);
     }
@@ -56,7 +105,10 @@ export default function ShowtimeScreen({
   };
 
   const handleSelectTime = (cinema, timeObj) => {
-    if (!timeObj.isAvailable) return;
+    if (!timeObj.isAvailable) {
+      Alert.alert('Suất chiếu đã hết vé', 'Vui lòng chọn khung giờ chiếu khác còn vé.');
+      return;
+    }
     setSelectedCinema(cinema);
     setSelectedTime(timeObj.time);
     setTicketPrice(timeObj.price || 95000);
@@ -64,9 +116,16 @@ export default function ShowtimeScreen({
 
   const handleNext = () => {
     const bookingData = {
-      movie: movie || { title: 'Hành Tinh Đỏ' },
-      cinema: selectedCinema || cinemas[0] || { name: 'CineNow Landmark 81' },
+      movie: movie || {
+        title: 'Hành Tinh Đỏ',
+        duration: '128 phút',
+        ageRating: '16+',
+        format: '2D',
+      },
+      cinema: selectedCinema || cinemas[0] || DEFAULT_CINEMAS[0],
+      cinemaName: selectedCinema?.name || DEFAULT_CINEMAS[0].name,
       room: selectedCinema?.room || 'PHÒNG 03',
+      format: '2D',
       date: selectedDate,
       time: selectedTime,
       basePrice: ticketPrice,
@@ -74,37 +133,36 @@ export default function ShowtimeScreen({
     onContinue(bookingData);
   };
 
-  const activeDateObj = dates.find((d) => d.id === selectedDate) || dates[0];
-  const dateDisplay = activeDateObj ? `${activeDateObj.dayNumber}.10.2026` : '16.10.2026';
-
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0B0B0B" />
 
-      {/* Top Bar */}
+      {/* Top Bar đúng mẫu ảnh */}
       <View style={styles.topBar}>
-        <TouchableOpacity style={styles.backButton} onPress={onBack} activeOpacity={0.7}>
-          <Text style={styles.backArrow}>❮</Text>
-          <Text style={styles.topBarTitle}>Chọn suất chiếu</Text>
+        <TouchableOpacity style={styles.circularBackBtn} onPress={onBack} activeOpacity={0.7}>
+          <Text style={styles.backChevron}>❮</Text>
         </TouchableOpacity>
-
+        <Text style={styles.topBarTitle}>Chọn suất chiếu</Text>
         <TouchableOpacity
           style={styles.conflictBtn}
           onPress={() => setConflictModalVisible(true)}
           activeOpacity={0.8}
         >
-          <Text style={styles.conflictBtnText}>⚡ Kiểm tra xung đột</Text>
+          <Text style={styles.conflictBtnText}>⚡ Xung đột</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Breadcrumb Steps (Đã bỏ chọn rạp theo yêu cầu: Phim -> Suất -> Ghế -> Combo -> Trả tiền -> Vé QR) */}
-      <View style={styles.breadcrumbContainer}>
+      {/* Breadcrumb Steps: Phim | Rạp | Suất (Active) | Ghế | Combo | Trả tiền | Vé QR */}
+      <View style={styles.breadcrumbBar}>
         <View style={styles.stepItem}>
           <Text style={styles.stepText}>Phim</Text>
         </View>
         <View style={styles.stepItem}>
+          <Text style={styles.stepText}>Rạp</Text>
+        </View>
+        <View style={styles.stepItem}>
           <Text style={[styles.stepText, styles.stepActive]}>Suất</Text>
-          <View style={styles.stepIndicatorActive} />
+          <View style={styles.activeUnderline} />
         </View>
         <View style={styles.stepItem}>
           <Text style={styles.stepText}>Ghế</Text>
@@ -125,15 +183,15 @@ export default function ShowtimeScreen({
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Selected Movie Bar */}
-        <View style={styles.movieInfoBar}>
+        {/* Movie Info Box */}
+        <View style={styles.movieCard}>
           <View style={styles.movieIconBox}>
-            <Text style={styles.movieIcon}>🎬</Text>
+            <Text style={styles.movieIconText}>🎟️</Text>
           </View>
-          <View style={styles.movieDetails}>
+          <View style={styles.movieTextBox}>
             <Text style={styles.movieTitle}>{movie?.title || 'Hành Tinh Đỏ'}</Text>
             <Text style={styles.movieMeta}>
-              {movie?.duration || '128 phút'} • {movie?.ageRating || '16+'} • 2D
+              {movie?.duration || '128 phút'} • {movie?.ageRating || '16+'} • {movie?.format || '2D'}
             </Text>
           </View>
           <TouchableOpacity onPress={onSelectMovie} activeOpacity={0.7}>
@@ -141,7 +199,7 @@ export default function ShowtimeScreen({
           </TouchableOpacity>
         </View>
 
-        {/* Date Selector Row */}
+        {/* 5 Date Selector Cards (T4 16, T5 17, T6 18, T7 19, CN 20) */}
         <View style={styles.datesRow}>
           {dates.map((item) => {
             const isSelected = item.id === selectedDate;
@@ -152,17 +210,19 @@ export default function ShowtimeScreen({
                 onPress={() => handleDateChange(item.id)}
                 activeOpacity={0.8}
               >
-                <Text style={[styles.dateDayOfWeek, isSelected && styles.dateTextActive]}>
+                <Text style={[styles.dateDayOfWeek, isSelected && styles.textWhite]}>
                   {item.dayOfWeek}
                 </Text>
-                <Text style={[styles.dateDayNumber, isSelected && styles.dateTextActive]}>
+                <Text style={[styles.dateDayNumber, isSelected && styles.textWhite]}>
                   {item.dayNumber}
                 </Text>
                 {item.label ? (
-                  <Text style={[styles.dateLabel, isSelected && styles.dateTextActive]}>
+                  <Text style={[styles.dateLabel, isSelected && styles.textWhite]}>
                     {item.label}
                   </Text>
-                ) : null}
+                ) : (
+                  <View style={styles.dateLabelPlaceholder} />
+                )}
               </TouchableOpacity>
             );
           })}
@@ -170,40 +230,40 @@ export default function ShowtimeScreen({
 
         {loading ? (
           <View style={styles.loadingBox}>
-            <ActivityIndicator size="large" color="#E50914" />
-            <Text style={styles.loadingText}>Đang tải suất chiếu...</Text>
+            <ActivityIndicator size="small" color="#E50914" />
           </View>
         ) : (
-          /* Cinemas and Showtimes list */
+          /* Danh sách Rạp chiếu chuẩn CineNow */
           <View style={styles.cinemasList}>
             {cinemas.map((cinema) => (
-              <View key={cinema.id} style={styles.cinemaBlock}>
+              <View key={cinema.id} style={styles.cinemaCard}>
                 {/* Cinema Header */}
                 <View style={styles.cinemaHeader}>
-                  <View style={styles.cinemaIconSquare}>
+                  <View style={styles.cinemaIconBox}>
                     <Text style={styles.cinemaIconText}>🏛️</Text>
                   </View>
-                  <View style={styles.cinemaTextContainer}>
+                  <View style={styles.cinemaTitleBox}>
                     <Text style={styles.cinemaName}>{cinema.name}</Text>
                     <Text style={styles.cinemaDistance}>{cinema.district}</Text>
                   </View>
                 </View>
 
-                {/* Room Tag */}
-                <Text style={styles.roomTag}>{cinema.room}</Text>
+                {/* Room Title */}
+                <Text style={styles.roomLabel}>{cinema.room}</Text>
 
-                {/* Time Chips Grid */}
+                {/* Times Grid */}
                 <View style={styles.timesGrid}>
-                  {cinema.times.map((t, idx) => {
+                  {(cinema.times || []).map((t, idx) => {
                     const isPicked =
                       selectedCinema?.id === cinema.id && selectedTime === t.time;
+
                     return (
                       <TouchableOpacity
                         key={idx}
                         style={[
-                          styles.timeChip,
-                          !t.isAvailable && styles.timeChipDisabled,
-                          isPicked && styles.timeChipActive,
+                          styles.timeBtn,
+                          !t.isAvailable && styles.timeBtnDisabled,
+                          isPicked && styles.timeBtnActive,
                         ]}
                         disabled={!t.isAvailable}
                         onPress={() => handleSelectTime(cinema, t)}
@@ -223,14 +283,14 @@ export default function ShowtimeScreen({
                   })}
                 </View>
 
-                {/* Availability Legend */}
+                {/* Legend Row */}
                 <View style={styles.legendRow}>
                   <View style={styles.legendItem}>
                     <View style={[styles.legendDot, { backgroundColor: '#22C55E' }]} />
                     <Text style={styles.legendText}>Còn vé</Text>
                   </View>
                   <View style={styles.legendItem}>
-                    <View style={[styles.legendDot, { backgroundColor: '#52525B' }]} />
+                    <View style={[styles.legendDot, { backgroundColor: '#555555' }]} />
                     <Text style={styles.legendText}>Hết vé</Text>
                   </View>
                 </View>
@@ -239,28 +299,28 @@ export default function ShowtimeScreen({
           </View>
         )}
 
-        <View style={{ height: 110 }} />
+        <View style={{ height: 130 }} />
       </ScrollView>
 
       {/* Fixed Bottom Total & Continue Bar */}
       <View style={styles.bottomBar}>
-        <View style={styles.totalInfo}>
+        <View style={styles.totalRow}>
           <Text style={styles.totalLabel}>Tổng tiền</Text>
-          <Text style={styles.totalPrice}>
+          <Text style={styles.totalAmount}>
             {ticketPrice.toLocaleString('vi-VN')}đ
           </Text>
         </View>
 
         <TouchableOpacity
-          style={styles.continueButton}
+          style={styles.continueBtn}
           activeOpacity={0.85}
           onPress={handleNext}
         >
-          <Text style={styles.continueButtonText}>Tiếp tục chọn ghế</Text>
+          <Text style={styles.continueBtnText}>Tiếp tục chọn ghế</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Modal Kiểm tra xung đột */}
+      {/* Modal Xung Đột (giữ nguyên để không gây lỗi logic) */}
       <ShowtimeConflictModal
         visible={conflictModalVisible}
         movie={movie}
@@ -284,11 +344,11 @@ const styles = StyleSheet.create({
   topBar: {
     paddingTop: 45,
     paddingHorizontal: 16,
-    paddingBottom: 12,
+    paddingBottom: 14,
     backgroundColor: '#0B0B0B',
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
   conflictBtn: {
     backgroundColor: '#27272A',
@@ -303,78 +363,86 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
   },
-  backButton: {
-    flexDirection: 'row',
+  circularBackBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#1E1E1E',
     alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
   },
-  backArrow: {
+  backChevron: {
     color: '#FFFFFF',
-    fontSize: 18,
-    marginRight: 8,
+    fontSize: 14,
+    fontWeight: 'bold',
   },
   topBarTitle: {
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
   },
-  breadcrumbContainer: {
+  breadcrumbBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#18181B',
+    borderBottomColor: '#1A1A1A',
   },
   stepItem: {
     alignItems: 'center',
+    position: 'relative',
+    paddingBottom: 4,
   },
   stepText: {
-    color: '#71717A',
-    fontSize: 12,
+    color: '#555555',
+    fontSize: 11,
     fontWeight: '600',
   },
   stepActive: {
-    color: '#E50914',
+    color: '#FFFFFF',
     fontWeight: 'bold',
   },
-  stepIndicatorActive: {
+  activeUnderline: {
+    position: 'absolute',
+    bottom: -6,
     height: 2,
     width: '100%',
     backgroundColor: '#E50914',
-    marginTop: 4,
     borderRadius: 1,
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingTop: 16,
   },
-  movieInfoBar: {
+  movieCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#18181B',
-    borderRadius: 16,
+    backgroundColor: '#141414',
+    borderRadius: 14,
     padding: 12,
-    marginBottom: 18,
+    marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: '#202020',
   },
   movieIconBox: {
-    width: 40,
-    height: 40,
+    width: 42,
+    height: 42,
     borderRadius: 10,
-    backgroundColor: '#E50914',
+    backgroundColor: '#B91C1C',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   },
-  movieIcon: {
-    fontSize: 18,
+  movieIconText: {
+    fontSize: 20,
   },
-  movieDetails: {
+  movieTextBox: {
     flex: 1,
   },
   movieTitle: {
@@ -384,89 +452,89 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   movieMeta: {
-    color: '#71717A',
+    color: '#777777',
     fontSize: 12,
   },
   changeMovieText: {
     color: '#E50914',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
-    paddingHorizontal: 4,
   },
   datesRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   dateCard: {
     flex: 1,
-    backgroundColor: '#18181B',
+    backgroundColor: '#141414',
     borderRadius: 14,
     paddingVertical: 10,
     alignItems: 'center',
-    marginHorizontal: 4,
+    marginHorizontal: 3,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: '#202020',
+    minHeight: 74,
+    justifyContent: 'center',
   },
   dateCardActive: {
     backgroundColor: '#E50914',
     borderColor: '#E50914',
   },
   dateDayOfWeek: {
-    color: '#71717A',
-    fontSize: 12,
+    color: '#777777',
+    fontSize: 11,
     fontWeight: '500',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   dateDayNumber: {
     color: '#FFFFFF',
-    fontSize: 17,
+    fontSize: 19,
     fontWeight: 'bold',
   },
   dateLabel: {
-    color: '#A1A1AA',
-    fontSize: 10,
+    color: '#FFFFFF',
+    fontSize: 9,
     marginTop: 2,
   },
-  dateTextActive: {
+  dateLabelPlaceholder: {
+    height: 12,
+  },
+  textWhite: {
     color: '#FFFFFF',
   },
   loadingBox: {
-    paddingVertical: 40,
+    paddingVertical: 30,
     alignItems: 'center',
-  },
-  loadingText: {
-    color: '#71717A',
-    marginTop: 10,
   },
   cinemasList: {
     gap: 16,
   },
-  cinemaBlock: {
-    backgroundColor: '#18181B',
-    borderRadius: 18,
+  cinemaCard: {
+    backgroundColor: '#141414',
+    borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#27272A',
+    borderColor: '#202020',
   },
   cinemaHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 12,
   },
-  cinemaIconSquare: {
-    width: 38,
-    height: 38,
+  cinemaIconBox: {
+    width: 36,
+    height: 36,
     borderRadius: 10,
-    backgroundColor: '#E50914',
+    backgroundColor: '#B91C1C',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: 10,
   },
   cinemaIconText: {
-    fontSize: 16,
+    fontSize: 18,
   },
-  cinemaTextContainer: {
+  cinemaTitleBox: {
     flex: 1,
   },
   cinemaName: {
@@ -475,13 +543,13 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   cinemaDistance: {
-    color: '#71717A',
+    color: '#777777',
     fontSize: 12,
-    marginTop: 2,
+    marginTop: 1,
   },
-  roomTag: {
-    color: '#A1A1AA',
-    fontSize: 12,
+  roomLabel: {
+    color: '#777777',
+    fontSize: 11,
     fontWeight: '600',
     marginBottom: 12,
   },
@@ -491,22 +559,24 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 14,
   },
-  timeChip: {
-    backgroundColor: '#27272A',
-    paddingVertical: 10,
+  timeBtn: {
+    backgroundColor: '#1E1E1E',
+    paddingVertical: 9,
     paddingHorizontal: 16,
-    borderRadius: 12,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#3F3F46',
+    borderColor: '#2B2B2B',
+    minWidth: 72,
+    alignItems: 'center',
   },
-  timeChipActive: {
+  timeBtnActive: {
     backgroundColor: '#E50914',
     borderColor: '#E50914',
   },
-  timeChipDisabled: {
-    backgroundColor: '#141416',
-    borderColor: '#222225',
-    opacity: 0.5,
+  timeBtnDisabled: {
+    backgroundColor: '#161616',
+    borderColor: '#1E1E1E',
+    opacity: 0.4,
   },
   timeText: {
     color: '#FFFFFF',
@@ -518,7 +588,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   timeTextDisabled: {
-    color: '#52525B',
+    color: '#555555',
   },
   legendRow: {
     flexDirection: 'row',
@@ -529,13 +599,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   legendDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
     marginRight: 6,
   },
   legendText: {
-    color: '#71717A',
+    color: '#777777',
     fontSize: 11,
   },
   bottomBar: {
@@ -543,37 +613,38 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#121214',
+    backgroundColor: '#101010',
     borderTopWidth: 1,
-    borderTopColor: '#27272A',
-    paddingHorizontal: 20,
+    borderTopColor: '#1E1E1E',
+    paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 24,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
   },
-  totalInfo: {
-    justifyContent: 'center',
+  totalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
   },
   totalLabel: {
-    color: '#71717A',
-    fontSize: 12,
+    color: '#777777',
+    fontSize: 13,
   },
-  totalPrice: {
+  totalAmount: {
     color: '#E50914',
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
   },
-  continueButton: {
+  continueBtn: {
     backgroundColor: '#E50914',
-    paddingHorizontal: 24,
+    borderRadius: 12,
     paddingVertical: 14,
-    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  continueButtonText: {
+  continueBtnText: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: 'bold',
   },
 });
