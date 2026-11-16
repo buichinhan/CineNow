@@ -90,11 +90,11 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    const user = await User.findOne(
-      identifier.includes('@')
-        ? { email: identifier.toLowerCase() }
-        : { phone: identifier }
-    );
+   const user = await User.findOne(
+  identifier.includes("@")
+    ? { email: identifier.toLowerCase() }
+    : { phone: identifier }
+).select("+password");
 
     if (!user) {
       return res.status(401).json({

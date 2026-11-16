@@ -1,4 +1,5 @@
-const mongoose = require('mongoose');
+
+const mongoose = require("mongoose");
 
 const userSchema = new mongoose.Schema(
   {
@@ -27,11 +28,19 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: true,
       minlength: 8,
+      select: false,
     },
 
     loyaltyPoints: {
       type: Number,
       default: 120,
+    },
+
+    // Phân quyền tài khoản CineNow
+    role: {
+      type: String,
+      enum: ["customer", "admin"],
+      default: "customer",
     },
   },
   {
@@ -39,4 +48,4 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-module.exports = mongoose.model('User', userSchema);
+module.exports = mongoose.model("User", userSchema);

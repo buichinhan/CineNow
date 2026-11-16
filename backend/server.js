@@ -15,6 +15,15 @@ const jwt = require('jsonwebtoken');
 const movieRoutes = require('./routes/movieRoutes');
 const authRoutes = require('./routes/auth');
 const showtimeRoutes = require('./routes/showtimeRoutes');
+const movieRoutes = require('./routes/movieRoutes');
+const authRoutes = require('./routes/auth');
+const showtimeRoutes = require('./routes/showtimeRoutes');
+
+// Router từ nhánh main
+const cinemaRoutes = require('./routes/cinemaRoutes');
+const adminRoutes = require('./routes/admin');
+
+// Router từ nhánh feature/manhtoan
 const voucherRoutes = require('./routes/voucherRoutes');
 const loyaltyRoutes = require('./routes/loyaltyRoutes');
 
@@ -147,6 +156,8 @@ app.use('/api/movies', movieRoutes);
 // Không đăng ký thêm API GET /api/showtimes cũ tại đây.
 
 app.use('/api/showtimes', showtimeRoutes);
+app.use('/api/cinemas', cinemaRoutes);
+app.use('/api/admin', adminRoutes);
 
 // ====================== VOUCHER & LOYALTY ROUTES ======================
 app.use('/api/vouchers', voucherRoutes);
@@ -187,7 +198,7 @@ app.get('/api/home', async (req, res) => {
         movie.status === 'COMING_SOON'
     );
 
-    const nearbyCinemas = cinemas.slice(0, 3);
+    const nearbyCinemas = cinemas.filter(cinema => cinema.status !== 'INACTIVE');
 
     return res.json({
       success: true,

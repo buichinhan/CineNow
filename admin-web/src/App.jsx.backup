@@ -1,0 +1,353 @@
+
+import { useEffect, useState } from "react";
+import {
+  LayoutDashboard,
+  Film,
+  Building2,
+  CalendarDays,
+  Ticket,
+  Users,
+  Wallet,
+  Menu,
+  Bell,
+  Search,
+  ChevronRight,
+  Clock,
+  Clapperboard,
+  LogOut,
+} from "lucide-react";
+
+import "./App.css";
+import Showtimes from "./pages/Showtimes";
+import Login from "./pages/Login";
+
+import {
+  loginAdmin,
+  verifyAdmin,
+  getAdminToken,
+  logoutAdmin,
+} from "./services/api";
+
+const menuItems = [
+  { id: "dashboard", name: "Tổng quan", icon: LayoutDashboard },
+  { id: "movies", name: "Quản lý phim", icon: Film },
+  { id: "cinemas", name: "Quản lý rạp", icon: Building2 },
+  { id: "showtimes", name: "Quản lý suất chiếu", icon: CalendarDays },
+  { id: "bookings", name: "Quản lý đặt vé", icon: Ticket },
+];
+
+const stats = [
+  { name: "Tổng doanh thu", value: "—", icon: Wallet },
+  { name: "Vé đã bán", value: "—", icon: Ticket },
+  { name: "Phim đang chiếu", value: "—", icon: Film },
+  { name: "Khách hàng", value: "—", icon: Users },
+];
+
+function App() {
+  const [activePage, setActivePage] = useState("dashboard");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const [adminUser, setAdminUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+
+    async function restoreSession() {
+      const token = getAdminToken();
+
+      if (!token) {
+        if (active) setAuthLoading(false);
+        return;
+      }
+
+      try {
+        const result = await verifyAdmin(token);
+
+        if (!result.success || result.user?.role !== "admin") {
+          throw new Error("Không có quyền quản trị.");
+        }
+
+        if (active) {
+          setAdminUser(result.user);
+        }
+      } catch {
+        logoutAdmin();
+
+        if (active) {
+          setAdminUser(null);
+        }
+      } finally {
+        if (active) setAuthLoading(false);
+      }
+    }
+
+    restoreSession();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleLogin = async (email, password) => {
+    const user = await loginAdmin(email, password);
+
+    setAdminUser(user);
+    setActivePage("dashboard");
+  };
+
+  const handleLogout = () => {
+    logoutAdmin();
+    setAdminUser(null);
+    setActivePage("dashboard");
+    setSidebarOpen(false);
+  };
+
+  const current =
+    menuItems.find((item) => item.id === activePage) ||
+    menuItems[0];
+
+  const navigate = (id) => {
+    setActivePage(id);
+    setSidebarOpen(false);
+  };
+
+  if (authLoading) {
+    return (
+      <div className="cn-login-page">
+        <div className="cn-login-card" style={{ textAlign: "center" }}>
+          <Clapperboard size={42} color="#E50914" />
+          <h2>Đang xác thực CineNow Admin...</h2>
+          <p>Vui lòng chờ trong giây lát.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!adminUser) {
+    return <Login onLogin={handleLogin} />;
+  }
+
+  const adminName = adminUser.fullName || "Administrator";
+  const adminInitial = adminName.charAt(0).toUpperCase();
+
+  return (
+    <div className="admin-layout">
+      {sidebarOpen && (
+        <div
+          className="sidebar-overlay"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
+        <div className="brand">
+          <div className="brand-icon">
+            <Clapperboard size={25} />
+          </div>
+
+          <div>
+            <h2>
+              Cine<span>Now</span>
+            </h2>
+            <small>ADMIN PANEL</small>
+          </div>
+        </div>
+
+        <div className="nav-caption">
+          QUẢN TRỊ HỆ THỐNG
+        </div>
+
+        <nav className="sidebar-nav">
+          {menuItems.map(({ id, name, icon: Icon }) => (
+            <button
+              key={id}
+              className={`nav-item ${
+                activePage === id ? "active" : ""
+              }`}
+              onClick={() => navigate(id)}
+            >
+              <Icon size={19} />
+              <span>{name}</span>
+
+              {activePage === id && (
+                <ChevronRight
+                  size={15}
+                  className="nav-arrow"
+                />
+              )}
+            </button>
+          ))}
+        </nav>
+
+        <div className="sidebar-bottom">
+          <div className="admin-profile">
+            <div className="avatar">
+              {adminInitial}
+            </div>
+
+            <div>
+              <strong>{adminName}</strong>
+              <small>{adminUser.email}</small>
+            </div>
+          </div>
+
+          <button
+            className="logout-btn"
+            onClick={handleLogout}
+          >
+            <LogOut size={18} />
+            Đăng xuất
+          </button>
+        </div>
+      </aside>
+
+      <main className="main-content">
+        <header className="topbar">
+          <div className="topbar-left">
+            <button
+              className="menu-button"
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Mở menu"
+            >
+              <Menu size={23} />
+            </button>
+
+            <div>
+              <h1>{current.name}</h1>
+              <p>
+                Hệ thống quản trị rạp chiếu phim CineNow
+              </p>
+            </div>
+          </div>
+
+          <div className="topbar-actions">
+            <div className="search-box">
+              <Search size={17} />
+              <span>Tìm kiếm...</span>
+            </div>
+
+            <Bell size={20} />
+
+            <div className="header-avatar">
+              {adminInitial}
+            </div>
+          </div>
+        </header>
+
+        <div className="page-content">
+          {activePage === "dashboard" ? (
+            <>
+              <section className="welcome-card">
+                <div>
+                  <span className="welcome-tag">
+                    CINENOW MANAGEMENT SYSTEM
+                  </span>
+
+                  <h2>
+                    Chào mừng đến với CineNow Admin
+                  </h2>
+
+                  <p>
+                    Quản lý phim, lịch chiếu, rạp chiếu và
+                    hoạt động đặt vé trên một hệ thống duy nhất.
+                  </p>
+
+                  <button
+                    className="welcome-button"
+                    onClick={() => navigate("showtimes")}
+                  >
+                    Quản lý lịch chiếu
+                    <ChevronRight size={18} />
+                  </button>
+                </div>
+
+                <Clapperboard
+                  size={100}
+                  className="welcome-icon"
+                />
+              </section>
+
+              <div className="stats-grid">
+                {stats.map(({ name, value, icon: Icon }) => (
+                  <div className="stat-card" key={name}>
+                    <div className="stat-top">
+                      <span>{name}</span>
+
+                      <div className="stat-icon">
+                        <Icon size={21} />
+                      </div>
+                    </div>
+
+                    <h2>{value}</h2>
+
+                    <small>
+                      Đang chờ kết nối dữ liệu thực tế
+                    </small>
+                  </div>
+                ))}
+              </div>
+
+              <div className="dashboard-grid">
+                <section className="panel">
+                  <div className="panel-header">
+                    <h3>Hoạt động đặt vé</h3>
+                    <Ticket size={20} />
+                  </div>
+
+                  <div className="empty-state">
+                    <Ticket size={42} />
+                    <h4>Chưa có dữ liệu đặt vé</h4>
+                    <p>
+                      Dữ liệu sẽ hiển thị khi kết nối API.
+                    </p>
+                  </div>
+                </section>
+
+                <section className="panel">
+                  <div className="panel-header">
+                    <h3>Suất chiếu sắp tới</h3>
+                    <Clock size={20} />
+                  </div>
+
+                  <div className="empty-state">
+                    <CalendarDays size={42} />
+                    <h4>Chưa tải danh sách suất chiếu</h4>
+                    <p>
+                      Lịch chiếu sẽ được đồng bộ từ MongoDB.
+                    </p>
+                  </div>
+                </section>
+              </div>
+            </>
+          ) : activePage === "showtimes" ? (
+            <Showtimes />
+          ) : (
+            <section className="panel module-panel">
+              <div className="module-icon">
+                {current && <current.icon size={42} />}
+              </div>
+
+              <h2>{current.name}</h2>
+
+              <p>
+                Đây là khu vực {current.name.toLowerCase()}.
+                Chúng ta sẽ bổ sung chức năng quản lý và
+                kết nối API trong các bước tiếp theo.
+              </p>
+
+              <button
+                className="primary-button"
+                onClick={() => navigate("dashboard")}
+              >
+                Quay lại tổng quan
+              </button>
+            </section>
+          )}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+export default App;
