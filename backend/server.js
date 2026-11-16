@@ -15,9 +15,6 @@ const jwt = require('jsonwebtoken');
 const movieRoutes = require('./routes/movieRoutes');
 const authRoutes = require('./routes/auth');
 const showtimeRoutes = require('./routes/showtimeRoutes');
-const movieRoutes = require('./routes/movieRoutes');
-const authRoutes = require('./routes/auth');
-const showtimeRoutes = require('./routes/showtimeRoutes');
 
 // Router từ nhánh main
 const cinemaRoutes = require('./routes/cinemaRoutes');
