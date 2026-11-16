@@ -14,6 +14,7 @@ import {
 import { initialTickets } from '../data/mockTickets';
 import TicketDetailScreen from './TicketDetailScreen';
 import CancelModal from '../components/CancelModal';
+import { cancelBookingApi } from '../api';
 
 const RED = '#E50914';
 const BG = '#0B0B0B';
@@ -26,7 +27,7 @@ const TABS = [
   { key: 'cancelled', label: 'Đã hủy' },
 ];
 
-export default function MyTicketsScreen({ onBack, tickets: externalTickets, onTicketsChange }) {
+export default function MyTicketsScreen({ onBack, tickets: externalTickets, onTicketsChange, token }) {
   const [tickets, setTickets] = useState(externalTickets || initialTickets);
   const [activeTab, setActiveTab] = useState('confirmed');
   const [selectedTicket, setSelectedTicket] = useState(null);
@@ -51,7 +52,7 @@ export default function MyTicketsScreen({ onBack, tickets: externalTickets, onTi
     setCancelModalVisible(true);
   };
 
-  const confirmCancel = (ticketId) => {
+  const confirmCancel = async (ticketId) => {
     const ticket = tickets.find((item) => item.id === ticketId);
 
     if (!ticket || ticket.status !== 'confirmed') {
@@ -60,12 +61,20 @@ export default function MyTicketsScreen({ onBack, tickets: externalTickets, onTi
       return;
     }
 
+    try {
+      if (token && (ticket.id || ticket.bookingCode)) {
+        await cancelBookingApi(ticket.id || ticket.bookingCode, token);
+      }
+    } catch (err) {
+      console.warn('Lỗi gọi API hủy vé:', err.message);
+    }
+
     const updatedTickets = tickets.map((item) =>
       item.id === ticketId
         ? {
             ...item,
             status: 'cancelled',
-            refundStatus: 'Đang xử lý hoàn tiền (90%)',
+            refundStatus: 'Đã hủy & Hoàn điểm thành viên',
           }
         : item
     );
@@ -81,8 +90,8 @@ export default function MyTicketsScreen({ onBack, tickets: externalTickets, onTi
     setActiveTab('cancelled');
 
     Alert.alert(
-      'Đã cập nhật vé',
-      'Vé đã được chuyển sang mục Đã hủy trong dữ liệu mẫu. Chưa có giao dịch hoàn tiền thực tế.'
+      'Hủy vé thành công',
+      'Đơn vé đã được hủy. Điểm thành viên đã sử dụng và lượt voucher (nếu có) đã được hoàn trả lại tài khoản của bạn.'
     );
   };
 

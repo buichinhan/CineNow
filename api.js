@@ -282,3 +282,155 @@ export async function fetchConcessions(category) {
     throw error;
   }
 }
+
+// =========================================================================
+// VOUCHER & MÃ GIẢM GIÁ (VOUCHERS & PROMOTIONS)
+// =========================================================================
+
+/**
+ * Lấy danh sách Voucher công khai
+ */
+export async function fetchPublicVouchers(token = null) {
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`${API_BASE_URL}/vouchers`, { headers });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.message || 'Không thể tải voucher');
+    return json.data || [];
+  } catch (error) {
+    console.warn('Lỗi gọi API /vouchers:', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Lấy danh sách Voucher trong ví cá nhân của người dùng
+ */
+export async function fetchMyVouchers(token, status = '') {
+  try {
+    const query = status ? `?status=${status}` : '';
+    const res = await fetch(`${API_BASE_URL}/vouchers/my-vouchers${query}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.message || 'Không thể tải ví voucher');
+    return json.data || [];
+  } catch (error) {
+    console.warn('Lỗi gọi API /vouchers/my-vouchers:', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Thu thập voucher vào ví
+ */
+export async function claimVoucherApi(payload, token) {
+  try {
+    const res = await fetch(`${API_BASE_URL}/vouchers/claim`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.message || 'Không thể lưu voucher');
+    return json;
+  } catch (error) {
+    console.warn('Lỗi lưu voucher:', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Kiểm tra và tính toán giảm giá của Voucher
+ */
+export async function validateVoucherApi(payload, token = null) {
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`${API_BASE_URL}/vouchers/validate`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.message || 'Mã giảm giá không hợp lệ');
+    return json;
+  } catch (error) {
+    console.warn('Lỗi kiểm tra voucher:', error.message);
+    throw error;
+  }
+}
+
+// =========================================================================
+// ĐIỂM THÀNH VIÊN (LOYALTY POINTS)
+// =========================================================================
+
+/**
+ * Lấy số dư điểm thành viên và tỷ lệ quy đổi
+ */
+export async function fetchLoyaltyBalance(token) {
+  try {
+    const res = await fetch(`${API_BASE_URL}/loyalty/balance`, {
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.message || 'Không thể lấy số dư điểm');
+    return json.data;
+  } catch (error) {
+    console.warn('Lỗi lấy điểm thành viên:', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Lấy lịch sử biến động điểm
+ */
+export async function fetchLoyaltyHistory(token) {
+  try {
+    const res = await fetch(`${API_BASE_URL}/loyalty/history`, {
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.message || 'Không thể tải lịch sử điểm');
+    return json.data || [];
+  } catch (error) {
+    console.warn('Lỗi lấy lịch sử điểm:', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Hủy vé và xử lý hoàn điểm / hoàn voucher
+ */
+export async function cancelBookingApi(bookingId, token = null) {
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`${API_BASE_URL}/bookings/${bookingId}/cancel`, {
+      method: 'POST',
+      headers,
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.message || 'Không thể hủy vé');
+    return json;
+  } catch (error) {
+    console.warn('Lỗi hủy vé:', error.message);
+    throw error;
+  }
+}
