@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import { fetchSeats, holdSeatsApi, releaseSeatsApi, createBooking } from './api';
+import { fetchSeats, holdSeatsApi, createBooking } from './api';
 
 // Sơ đồ ghế 6 hàng chuẩn xác đúng bố cục ảnh chụp
 const INITIAL_LAYOUT = {
@@ -129,7 +129,8 @@ export default function SeatSelectionScreen({
   );
 
   const movieTitle = movie?.title || bookingData?.movie?.title || 'Hành Tinh Đỏ';
-  const cinemaName = bookingData?.cinemaName || bookingData?.cinema?.name || 'Landmark 81';
+  const cinemaName =
+    bookingData?.cinemaName || bookingData?.cinema?.name || 'CineNow Landmark 81';
   const roomName = bookingData?.room || 'Phòng 03';
   const showDate = bookingData?.date || '16.10.2026';
   const showTime = bookingData?.time || '19:00';
@@ -138,7 +139,37 @@ export default function SeatSelectionScreen({
     loadSeats();
   }, []);
 
-  const loadSeats = async () => {
+  useEffect(() => {
+    if (remainingSeconds === null || remainingSeconds <= 0) return undefined;
+
+    const timer = setTimeout(() => {
+      setRemainingSeconds((seconds) => Math.max(0, seconds - 1));
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [remainingSeconds]);
+
+  useEffect(() => {
+    if (remainingSeconds !== 0 || !holdToken) return;
+
+    Alert.alert(
+      'Hết thời gian giữ ghế! ⏳',
+      'Đã hết thời gian giữ ghế tạm thời (5 phút). Các ghế bạn đang chọn đã được tự động giải phóng để nhường cho khách hàng khác.',
+      [
+        {
+          text: 'Chọn lại ghế',
+          onPress: () => {
+            setSelectedSeats([]);
+            setHoldToken(null);
+            setRemainingSeconds(null);
+            loadSeats(null);
+          },
+        },
+      ]
+    );
+  }, [remainingSeconds, holdToken]);
+
+  const loadSeats = async (token = holdToken) => {
     try {
       setLoading(true);
       const movieId = movie?._id || movie?.id || movie?.slug || 'hanh-tinh-do';
@@ -147,12 +178,16 @@ export default function SeatSelectionScreen({
         cinemaName,
         showDate,
         showTime,
-        holdToken,
+        token,
         roomName
       );
 
       if (data && data.seatLayout && Array.isArray(data.seatLayout.rows)) {
         setSeatLayout(data.seatLayout);
+      }
+      if (data?.activeHold?.remainingSeconds) {
+        setRemainingSeconds(data.activeHold.remainingSeconds);
+        setHoldExpiresAt(data.activeHold.expiresAt);
       }
     } catch (err) {
       console.warn('Sử dụng sơ đồ ghế chuẩn CineNow:', err.message);
@@ -165,6 +200,14 @@ export default function SeatSelectionScreen({
   const handleToggleSeat = (seat, row) => {
     if (seat.status === 'booked') {
       Alert.alert('Ghế đã đặt', 'Ghế này đã có người mua thành công.');
+      return;
+    }
+
+    if (seat.status === 'holding' && !seat.isMine && !selectedSeats.includes(seat.id)) {
+      Alert.alert(
+        'Ghế đang được giữ',
+        'Ghế này đang được khách hàng khác giữ tạm. Vui lòng chọn ghế khác hoặc chờ hết thời gian giữ.'
+      );
       return;
     }
 
@@ -200,25 +243,81 @@ export default function SeatSelectionScreen({
     try {
       setSubmitting(true);
 
-      const nextPayload = {
-        movie: movie || bookingData?.movie,
-        bookingData,
+      const response = await holdSeatsApi({
         cinemaName,
         room: roomName,
         date: showDate,
         time: showTime,
-        selectedSeats,
-        seatTotal: totalPrice,
+        seats: selectedSeats,
         holdToken,
-        holdExpiresAt,
-        remainingSeconds,
-      };
+        userId: user?._id || user?.id,
+        durationSeconds: 300,
+      });
+
+      const nextHoldToken = response.data?.holdToken || holdToken;
+      const nextHoldExpiresAt = response.data?.expiresAt || Date.now() + 300000;
+      const nextRemainingSeconds = response.data?.remainingSeconds || 300;
+
+      setHoldToken(nextHoldToken);
+      setHoldExpiresAt(nextHoldExpiresAt);
+      setRemainingSeconds(nextRemainingSeconds);
 
       if (onContinue) {
-        onContinue(nextPayload);
+        onContinue({
+          movie: movie || bookingData?.movie,
+          bookingData,
+          cinemaName,
+          room: roomName,
+          date: showDate,
+          time: showTime,
+          selectedSeats,
+          seatTotal: totalPrice,
+          holdToken: nextHoldToken,
+          holdExpiresAt: nextHoldExpiresAt,
+          remainingSeconds: nextRemainingSeconds,
+        });
+      } else {
+        await handleConfirmBooking(nextHoldToken);
       }
     } catch (err) {
-      Alert.alert('Lỗi', err.message);
+      Alert.alert(
+        'Không thể giữ ghế',
+        err.message || 'Ghế bạn chọn đang được người khác giữ hoặc đã bán. Vui lòng chọn lại.'
+      );
+      loadSeats();
+      if (Array.isArray(err.conflictingSeats)) {
+        setSelectedSeats((seats) =>
+          seats.filter((id) => !err.conflictingSeats.includes(id))
+        );
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleConfirmBooking = async (token = holdToken) => {
+    try {
+      setSubmitting(true);
+      const response = await createBooking({
+        userId: user?._id || user?.id,
+        movieTitle,
+        cinemaName,
+        room: roomName,
+        date: showDate,
+        time: showTime,
+        seats: selectedSeats,
+        seatTotal: totalPrice,
+        totalPrice,
+        holdToken: token,
+      });
+
+      Alert.alert(
+        'Đặt vé thành công! 🎉',
+        `Mã vé: ${response.data?.bookingCode || 'CN-886912'}\nPhim: ${movieTitle}\nSuất: ${showTime} - ${showDate}\nGhế: ${selectedSeats.join(', ')}\nTổng tiền: ${totalPrice.toLocaleString('vi-VN')}đ`,
+        [{ text: 'Về trang chủ', onPress: () => onComplete && onComplete() }]
+      );
+    } catch (err) {
+      Alert.alert('Lỗi đặt vé', err.message || 'Không thể kết nối đến máy chủ.');
     } finally {
       setSubmitting(false);
     }
@@ -262,6 +361,19 @@ export default function SeatSelectionScreen({
         </View>
       </View>
 
+      {remainingSeconds !== null && remainingSeconds > 0 && (
+        <View style={styles.holdTimerBanner}>
+          <Text style={styles.holdTimerTitle}>ĐANG GIỮ GHẾ TẠM THỜI</Text>
+          <Text style={styles.holdTimerSubtitle}>
+            Ghế sẽ tự giải phóng sau{' '}
+            <Text style={styles.holdTimerHighlight}>
+              {String(Math.floor(remainingSeconds / 60)).padStart(2, '0')}:
+              {String(remainingSeconds % 60).padStart(2, '0')}
+            </Text>
+          </Text>
+        </View>
+      )}
+
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -304,6 +416,8 @@ export default function SeatSelectionScreen({
                   {row.seats.map((seat) => {
                     const isSelected = selectedSeats.includes(seat.id);
                     const isBooked = seat.status === 'booked';
+                    const isOtherHolding =
+                      seat.status === 'holding' && !seat.isMine && !isSelected;
 
                     // Ghế đôi Sweetbox (Row F)
                     if (seat.isDouble) {
@@ -312,8 +426,11 @@ export default function SeatSelectionScreen({
                           key={seat.id}
                           style={[
                             styles.doubleSeat,
+                            isBooked && styles.seatBooked,
+                            isOtherHolding && styles.seatHolding,
                             isSelected && styles.seatSelected,
                           ]}
+                          disabled={isBooked}
                           onPress={() => handleToggleSeat(seat, row)}
                           activeOpacity={0.8}
                         >
@@ -331,6 +448,7 @@ export default function SeatSelectionScreen({
                           row.type === 'standard' && styles.seatStandard,
                           row.type === 'vip' && styles.seatVip,
                           isBooked && styles.seatBooked,
+                          isOtherHolding && styles.seatHolding,
                           isSelected && styles.seatSelected,
                         ]}
                         disabled={isBooked}
@@ -362,6 +480,10 @@ export default function SeatSelectionScreen({
           <View style={styles.legendItem}>
             <View style={[styles.legendBox, styles.legendBooked]} />
             <Text style={styles.legendText}>Đã đặt</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendBox, styles.seatHolding]} />
+            <Text style={styles.legendText}>Đang giữ</Text>
           </View>
           <View style={styles.legendItem}>
             <View style={[styles.legendBox, styles.legendSelected]} />
@@ -536,6 +658,29 @@ const styles = StyleSheet.create({
     paddingVertical: 30,
     alignItems: 'center',
   },
+  holdTimerBanner: {
+    backgroundColor: '#2A1D08',
+    borderColor: '#8A5A10',
+    borderWidth: 1,
+    borderRadius: 10,
+    marginHorizontal: 16,
+    marginTop: 12,
+    padding: 12,
+  },
+  holdTimerTitle: {
+    color: '#FBBF24',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  holdTimerSubtitle: {
+    color: '#D4D4D8',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  holdTimerHighlight: {
+    color: '#FBBF24',
+    fontWeight: 'bold',
+  },
   seatMatrix: {
     alignItems: 'center',
     gap: 9,
@@ -586,6 +731,10 @@ const styles = StyleSheet.create({
   seatBooked: {
     backgroundColor: '#353538',
     borderColor: '#353538',
+  },
+  seatHolding: {
+    backgroundColor: '#F59E0B',
+    borderColor: '#F59E0B',
   },
   seatSelected: {
     backgroundColor: '#E50914',

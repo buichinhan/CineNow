@@ -86,6 +86,10 @@ export default function ShowtimeScreen({
         }
         if (Array.isArray(data.cinemas) && data.cinemas.length > 0) {
           setCinemas(data.cinemas);
+          setSelectedCinema((currentCinema) =>
+            data.cinemas.find((cinema) => cinema.id === currentCinema?.id) ||
+            data.cinemas[0]
+          );
         }
       }
     } catch (err) {
@@ -139,6 +143,13 @@ export default function ShowtimeScreen({
           <Text style={styles.backChevron}>❮</Text>
         </TouchableOpacity>
         <Text style={styles.topBarTitle}>Chọn suất chiếu</Text>
+        <TouchableOpacity
+          style={styles.conflictBtn}
+          onPress={() => setConflictModalVisible(true)}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.conflictBtnText}>⚡ Xung đột</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Breadcrumb Steps: Phim | Rạp | Suất (Active) | Ghế | Combo | Trả tiền | Vé QR */}
@@ -337,6 +348,20 @@ const styles = StyleSheet.create({
     backgroundColor: '#0B0B0B',
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  conflictBtn: {
+    backgroundColor: '#27272A',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#3F3F46',
+  },
+  conflictBtnText: {
+    color: '#EAB308',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
   circularBackBtn: {
     width: 36,
