@@ -1,10 +1,13 @@
 const express = require('express');
 const router = express.Router();
-
+const {
+  requireAuth,
+  requireAdmin,
+} = require("../middleware/adminAuth");
 const Showtime = require('../models/Showtime');
 const Movie = require('../models/Movie');
 const Cinema = require('../models/Cinema');
-
+const Booking = require('../models/Booking');
 const {
   DEFAULT_BUFFER_MINUTES,
   timeToMinutes,
@@ -21,7 +24,19 @@ const { SHOWTIME_DATES, SHOWTIME_CINEMAS } = require('../seedData');
 
 // Khởi tạo bộ nhớ tạm (runtime in-memory) cho showtimes khi chưa kết nối MongoDB
 let inMemoryShowtimes = [];
+async function hasRelatedBookings(showtime) {
+  if (!showtime) return false;
 
+  const query = {
+    cinemaName: showtime.cinemaName,
+    room: showtime.room,
+    date: showtime.date,
+    time: showtime.startTime,
+    movieTitle: showtime.movieTitle,
+  };
+
+  return Boolean(await Booking.exists(query));
+}
 // Helper lấy danh sách showtimes hiện tại (từ DB hoặc in-memory)
 async function getExistingShowtimes({ date, cinemaName, room, isMongoConnected }) {
   if (isMongoConnected) {
@@ -146,7 +161,7 @@ router.post('/check-conflict', async (req, res) => {
  * 2. POST /api/showtimes
  * Tạo mới một lịch chiếu
  */
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, requireAdmin, async (req, res) => {
   try {
     const {
       movieId,
@@ -521,7 +536,7 @@ router.get('/:id', async (req, res) => {
     });
   }
 });
-router.put('/:id', async (req, res) => {
+router.put('/:id', requireAuth, requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const {
@@ -555,6 +570,32 @@ router.put('/:id', async (req, res) => {
         message: 'Không tìm thấy lịch chiếu cần cập nhật.',
       });
     }
+    // Không cho thay đổi lịch chiếu khi đã có lịch sử đặt vé.
+const hasBookings = await hasRelatedBookings(currentShowtime);
+
+if (hasBookings) {
+  const protectedFields = [
+    ['movieId', movieId, currentShowtime.movieId],
+    ['cinemaName', cinemaName, currentShowtime.cinemaName],
+    ['room', room, currentShowtime.room],
+    ['date', date, currentShowtime.date],
+    ['startTime', startTime, currentShowtime.startTime],
+  ];
+
+  const changesProtectedField = protectedFields.some(
+    ([, newValue, oldValue]) =>
+      newValue !== undefined &&
+      String(newValue) !== String(oldValue)
+  );
+
+  if (changesProtectedField) {
+    return res.status(409).json({
+      success: false,
+      message:
+        'Suất chiếu đã có lịch sử đặt vé. Không được thay đổi phim, rạp, phòng, ngày hoặc giờ.',
+    });
+  }
+}
 
     const targetMovieId = movieId || currentShowtime.movieId;
     const targetCinemaName = cinemaName || currentShowtime.cinemaName;
@@ -682,11 +723,34 @@ router.put('/:id', async (req, res) => {
  * 6. DELETE /api/showtimes/:id
  * Xóa lịch chiếu
  */
-router.delete('/:id', async (req, res) => {
-  try {
+router.delete('/:id', requireAuth, requireAdmin, async (req, res) => {  try {
     const { id } = req.params;
     const isMongo = req.app.locals.isMongoConnected;
+    if (!isMongo) {
+      return res.status(503).json({
+        success: false,
+        message: "Không thể xóa suất chiếu khi MongoDB chưa kết nối.",
+      });
+    }
 
+    const showtime = await Showtime.findById(id);
+
+    if (!showtime) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy suất chiếu.",
+      });
+    }
+
+    const hasBookings = await hasRelatedBookings(showtime);
+
+    if (hasBookings) {
+      return res.status(409).json({
+        success: false,
+        message:
+          "Suất chiếu đã có lịch sử đặt vé. Không được phép xóa.",
+      });
+    }
     if (isMongo) {
       const deleted = await Showtime.findByIdAndDelete(id);
       if (!deleted) {

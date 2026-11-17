@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,49 +9,8 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
+
 import { fetchShowtimes } from './api';
-import ShowtimeConflictModal from './components/ShowtimeConflictModal';
-
-// Danh sách rạp & suất chiếu chuẩn CineNow theo đúng thiết kế
-const DEFAULT_CINEMAS = [
-  {
-    id: 'cinema-landmark-81',
-    name: 'CineNow Landmark 81',
-    district: 'Bình Thạnh • 1,2 km',
-    room: '2D PHỤ ĐỀ • PHÒNG 03',
-    times: [
-      { time: '09:00', price: 95000, isAvailable: true },
-      { time: '11:30', price: 95000, isAvailable: true },
-      { time: '14:00', price: 95000, isAvailable: true },
-      { time: '16:30', price: 95000, isAvailable: true },
-      { time: '19:00', price: 95000, isAvailable: true },
-      { time: '21:30', price: 95000, isAvailable: false },
-    ],
-  },
-  {
-    id: 'cinema-vincom-dong-khoi',
-    name: 'CineNow Vincom Đồng Khởi',
-    district: 'Quận 1 • 2,8 km',
-    room: '2D PHỤ ĐỀ • PHÒNG 03',
-    times: [
-      { time: '09:00', price: 95000, isAvailable: true },
-      { time: '11:30', price: 95000, isAvailable: true },
-      { time: '14:00', price: 95000, isAvailable: true },
-      { time: '16:30', price: 95000, isAvailable: true },
-      { time: '19:00', price: 95000, isAvailable: true },
-      { time: '21:30', price: 95000, isAvailable: true },
-    ],
-  },
-];
-
-// Danh sách 5 ngày chuẩn như ảnh: T4 16 (Hôm nay), T5 17, T6 18, T7 19, CN 20
-const FIXED_DATES = [
-  { id: '2026-10-16', dayOfWeek: 'T4', dayNumber: '16', label: 'Hôm nay' },
-  { id: '2026-10-17', dayOfWeek: 'T5', dayNumber: '17', label: '' },
-  { id: '2026-10-18', dayOfWeek: 'T6', dayNumber: '18', label: '' },
-  { id: '2026-10-19', dayOfWeek: 'T7', dayNumber: '19', label: '' },
-  { id: '2026-10-20', dayOfWeek: 'CN', dayNumber: '20', label: '' },
-];
 
 export default function ShowtimeScreen({
   movie,
@@ -59,110 +18,167 @@ export default function ShowtimeScreen({
   onSelectMovie,
   onContinue,
 }) {
-  const [loading, setLoading] = useState(false);
-  const [dates, setDates] = useState(FIXED_DATES);
-  const [selectedDate, setSelectedDate] = useState('2026-10-16');
-  const [cinemas, setCinemas] = useState(DEFAULT_CINEMAS);
+  const [loading, setLoading] = useState(true);
+  const [dates, setDates] = useState([]);
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [cinemas, setCinemas] = useState([]);
 
-  // Mặc định chọn CineNow Landmark 81 và suất 19:00 đúng như ảnh
-  const [selectedCinema, setSelectedCinema] = useState(DEFAULT_CINEMAS[0]);
-  const [selectedTime, setSelectedTime] = useState('19:00');
-  const [ticketPrice, setTicketPrice] = useState(95000);
-  const [conflictModalVisible, setConflictModalVisible] = useState(false);
+  const [selectedCinema, setSelectedCinema] = useState(null);
+  const [selectedTime, setSelectedTime] = useState(null);
+  const [ticketPrice, setTicketPrice] = useState(0);
+
+  const requestId = useRef(0);
+  const movieId = movie?._id || movie?.id || movie?.slug;
 
   useEffect(() => {
-    loadShowtimes(selectedDate);
-  }, [movie]);
+    let active = true;
+    const currentRequest = ++requestId.current;
 
-  const loadShowtimes = async (date) => {
-    try {
-      setLoading(true);
-      const movieId = movie?._id || movie?.id || movie?.slug || 'hanh-tinh-do';
-      const data = await fetchShowtimes(movieId, date);
+    setSelectedDate(null);
+    setSelectedCinema(null);
+    setSelectedTime(null);
+    setTicketPrice(0);
+    setDates([]);
+    setCinemas([]);
+    setLoading(true);
 
-      if (data) {
-        if (Array.isArray(data.dates) && data.dates.length > 0) {
-          setDates(data.dates);
-        }
-        if (Array.isArray(data.cinemas) && data.cinemas.length > 0) {
-          setCinemas(data.cinemas);
-          setSelectedCinema((currentCinema) =>
-            data.cinemas.find((cinema) => cinema.id === currentCinema?.id) ||
-            data.cinemas[0]
-          );
-        }
-      }
-    } catch (err) {
-      console.warn('Dùng dữ liệu suất chiếu chuẩn CineNow:', err.message);
-    } finally {
+    if (!movieId) {
       setLoading(false);
+      return () => {
+        active = false;
+      };
     }
-  };
 
-  const handleDateChange = (dateId) => {
+    fetchShowtimes(movieId)
+      .then((data) => {
+        if (!active || currentRequest !== requestId.current) return;
+
+        setDates(data?.dates || []);
+        setSelectedDate(data?.selectedDate || null);
+        setCinemas(data?.cinemas || []);
+      })
+      .catch((error) => {
+        if (!active || currentRequest !== requestId.current) return;
+
+        console.warn('Không thể tải suất chiếu:', error.message);
+        Alert.alert('Lỗi', 'Không thể tải lịch chiếu. Vui lòng thử lại.');
+      })
+      .finally(() => {
+        if (active && currentRequest === requestId.current) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [movieId]);
+
+  const handleDateChange = async (dateId) => {
+    if (loading || dateId === selectedDate || !movieId) return;
+
+    const currentRequest = ++requestId.current;
+
     setSelectedDate(dateId);
-    loadShowtimes(dateId);
+    setSelectedCinema(null);
+    setSelectedTime(null);
+    setTicketPrice(0);
+    setCinemas([]);
+    setLoading(true);
+
+    try {
+      const data = await fetchShowtimes(movieId, dateId);
+
+      if (currentRequest !== requestId.current) return;
+
+      setDates(data?.dates || []);
+      setSelectedDate(data?.selectedDate || dateId);
+      setCinemas(data?.cinemas || []);
+    } catch (error) {
+      if (currentRequest !== requestId.current) return;
+
+      console.warn('Không thể tải suất chiếu:', error.message);
+      Alert.alert('Lỗi', 'Không thể tải suất chiếu của ngày đã chọn.');
+    } finally {
+      if (currentRequest === requestId.current) {
+        setLoading(false);
+      }
+    }
   };
 
   const handleSelectTime = (cinema, timeObj) => {
-    if (!timeObj.isAvailable) {
-      Alert.alert('Suất chiếu đã hết vé', 'Vui lòng chọn khung giờ chiếu khác còn vé.');
-      return;
-    }
+    if (loading || !timeObj.isAvailable) return;
+
     setSelectedCinema(cinema);
     setSelectedTime(timeObj.time);
-    setTicketPrice(timeObj.price || 95000);
+    setTicketPrice(Number(timeObj.price) || 0);
   };
 
+  const canContinue =
+    !loading &&
+    !!movieId &&
+    !!selectedDate &&
+    !!selectedCinema &&
+    !!selectedTime &&
+    ticketPrice > 0 &&
+    cinemas.some(
+      (cinema) =>
+        cinema.id === selectedCinema?.id &&
+        cinema.times?.some(
+          (time) =>
+            time.time === selectedTime &&
+            time.isAvailable
+        )
+    );
+
   const handleNext = () => {
+    if (!canContinue) {
+      Alert.alert(
+        'Chưa chọn suất chiếu',
+        'Vui lòng chọn ngày, rạp và giờ chiếu trước khi tiếp tục.'
+      );
+      return;
+    }
+
     const bookingData = {
-      movie: movie || {
-        title: 'Hành Tinh Đỏ',
-        duration: '128 phút',
-        ageRating: '16+',
-        format: '2D',
-      },
-      cinema: selectedCinema || cinemas[0] || DEFAULT_CINEMAS[0],
-      cinemaName: selectedCinema?.name || DEFAULT_CINEMAS[0].name,
-      room: selectedCinema?.room || 'PHÒNG 03',
-      format: '2D',
+      movie,
+      cinema: selectedCinema,
+      room: selectedCinema.room,
       date: selectedDate,
       time: selectedTime,
       basePrice: ticketPrice,
     };
+
     onContinue(bookingData);
   };
 
+  const activeDateObj = dates.find(
+    (date) => date.id === selectedDate
+  );
+
+  const dateDisplay = selectedDate
+    ? selectedDate.split('-').reverse().join('.')
+    : '';
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0B0B0B" />
 
-      {/* Top Bar đúng mẫu ảnh */}
+      {/* Top Bar */}
       <View style={styles.topBar}>
-        <TouchableOpacity style={styles.circularBackBtn} onPress={onBack} activeOpacity={0.7}>
-          <Text style={styles.backChevron}>❮</Text>
-        </TouchableOpacity>
-        <Text style={styles.topBarTitle}>Chọn suất chiếu</Text>
-        <TouchableOpacity
-          style={styles.conflictBtn}
-          onPress={() => setConflictModalVisible(true)}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.conflictBtnText}>⚡ Xung đột</Text>
+        <TouchableOpacity style={styles.backButton} onPress={onBack} activeOpacity={0.7}>
+          <Text style={styles.backArrow}>❮</Text>
+          <Text style={styles.topBarTitle}>Chọn suất chiếu</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Breadcrumb Steps: Phim | Rạp | Suất (Active) | Ghế | Combo | Trả tiền | Vé QR */}
-      <View style={styles.breadcrumbBar}>
+      {/* Breadcrumb Steps (Đã bỏ chọn rạp theo yêu cầu: Phim -> Suất -> Ghế -> Combo -> Trả tiền -> Vé QR) */}
+      <View style={styles.breadcrumbContainer}>
         <View style={styles.stepItem}>
           <Text style={styles.stepText}>Phim</Text>
         </View>
         <View style={styles.stepItem}>
-          <Text style={styles.stepText}>Rạp</Text>
-        </View>
-        <View style={styles.stepItem}>
           <Text style={[styles.stepText, styles.stepActive]}>Suất</Text>
-          <View style={styles.activeUnderline} />
+          <View style={styles.stepIndicatorActive} />
         </View>
         <View style={styles.stepItem}>
           <Text style={styles.stepText}>Ghế</Text>
@@ -183,15 +199,15 @@ export default function ShowtimeScreen({
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Movie Info Box */}
-        <View style={styles.movieCard}>
+        {/* Selected Movie Bar */}
+        <View style={styles.movieInfoBar}>
           <View style={styles.movieIconBox}>
-            <Text style={styles.movieIconText}>🎟️</Text>
+            <Text style={styles.movieIcon}>🎬</Text>
           </View>
-          <View style={styles.movieTextBox}>
+          <View style={styles.movieDetails}>
             <Text style={styles.movieTitle}>{movie?.title || 'Hành Tinh Đỏ'}</Text>
             <Text style={styles.movieMeta}>
-              {movie?.duration || '128 phút'} • {movie?.ageRating || '16+'} • {movie?.format || '2D'}
+              {movie?.duration || '128 phút'} • {movie?.ageRating || '16+'} • 2D
             </Text>
           </View>
           <TouchableOpacity onPress={onSelectMovie} activeOpacity={0.7}>
@@ -199,7 +215,7 @@ export default function ShowtimeScreen({
           </TouchableOpacity>
         </View>
 
-        {/* 5 Date Selector Cards (T4 16, T5 17, T6 18, T7 19, CN 20) */}
+        {/* Date Selector Row */}
         <View style={styles.datesRow}>
           {dates.map((item) => {
             const isSelected = item.id === selectedDate;
@@ -210,19 +226,17 @@ export default function ShowtimeScreen({
                 onPress={() => handleDateChange(item.id)}
                 activeOpacity={0.8}
               >
-                <Text style={[styles.dateDayOfWeek, isSelected && styles.textWhite]}>
+                <Text style={[styles.dateDayOfWeek, isSelected && styles.dateTextActive]}>
                   {item.dayOfWeek}
                 </Text>
-                <Text style={[styles.dateDayNumber, isSelected && styles.textWhite]}>
+                <Text style={[styles.dateDayNumber, isSelected && styles.dateTextActive]}>
                   {item.dayNumber}
                 </Text>
                 {item.label ? (
-                  <Text style={[styles.dateLabel, isSelected && styles.textWhite]}>
+                  <Text style={[styles.dateLabel, isSelected && styles.dateTextActive]}>
                     {item.label}
                   </Text>
-                ) : (
-                  <View style={styles.dateLabelPlaceholder} />
-                )}
+                ) : null}
               </TouchableOpacity>
             );
           })}
@@ -230,40 +244,47 @@ export default function ShowtimeScreen({
 
         {loading ? (
           <View style={styles.loadingBox}>
-            <ActivityIndicator size="small" color="#E50914" />
+            <ActivityIndicator size="large" color="#E50914" />
+            <Text style={styles.loadingText}>Đang tải suất chiếu...</Text>
           </View>
         ) : (
-          /* Danh sách Rạp chiếu chuẩn CineNow */
+          /* Cinemas and Showtimes list */
           <View style={styles.cinemasList}>
+            {cinemas.length === 0 && (
+  <View style={styles.loadingBox}>
+    <Text style={styles.loadingText}>
+      Hiện chưa có suất chiếu cho ngày này.
+    </Text>
+  </View>
+)}
             {cinemas.map((cinema) => (
-              <View key={cinema.id} style={styles.cinemaCard}>
+              <View key={cinema.id} style={styles.cinemaBlock}>
                 {/* Cinema Header */}
                 <View style={styles.cinemaHeader}>
-                  <View style={styles.cinemaIconBox}>
+                  <View style={styles.cinemaIconSquare}>
                     <Text style={styles.cinemaIconText}>🏛️</Text>
                   </View>
-                  <View style={styles.cinemaTitleBox}>
+                  <View style={styles.cinemaTextContainer}>
                     <Text style={styles.cinemaName}>{cinema.name}</Text>
                     <Text style={styles.cinemaDistance}>{cinema.district}</Text>
                   </View>
                 </View>
 
-                {/* Room Title */}
-                <Text style={styles.roomLabel}>{cinema.room}</Text>
+                {/* Room Tag */}
+                <Text style={styles.roomTag}>{cinema.room}</Text>
 
-                {/* Times Grid */}
+                {/* Time Chips Grid */}
                 <View style={styles.timesGrid}>
-                  {(cinema.times || []).map((t, idx) => {
+                  {cinema.times.map((t, idx) => {
                     const isPicked =
                       selectedCinema?.id === cinema.id && selectedTime === t.time;
-
                     return (
                       <TouchableOpacity
                         key={idx}
                         style={[
-                          styles.timeBtn,
-                          !t.isAvailable && styles.timeBtnDisabled,
-                          isPicked && styles.timeBtnActive,
+                          styles.timeChip,
+                          !t.isAvailable && styles.timeChipDisabled,
+                          isPicked && styles.timeChipActive,
                         ]}
                         disabled={!t.isAvailable}
                         onPress={() => handleSelectTime(cinema, t)}
@@ -283,14 +304,14 @@ export default function ShowtimeScreen({
                   })}
                 </View>
 
-                {/* Legend Row */}
+                {/* Availability Legend */}
                 <View style={styles.legendRow}>
                   <View style={styles.legendItem}>
                     <View style={[styles.legendDot, { backgroundColor: '#22C55E' }]} />
                     <Text style={styles.legendText}>Còn vé</Text>
                   </View>
                   <View style={styles.legendItem}>
-                    <View style={[styles.legendDot, { backgroundColor: '#555555' }]} />
+                    <View style={[styles.legendDot, { backgroundColor: '#52525B' }]} />
                     <Text style={styles.legendText}>Hết vé</Text>
                   </View>
                 </View>
@@ -299,39 +320,30 @@ export default function ShowtimeScreen({
           </View>
         )}
 
-        <View style={{ height: 130 }} />
+        <View style={{ height: 110 }} />
       </ScrollView>
 
       {/* Fixed Bottom Total & Continue Bar */}
       <View style={styles.bottomBar}>
-        <View style={styles.totalRow}>
+        <View style={styles.totalInfo}>
           <Text style={styles.totalLabel}>Tổng tiền</Text>
-          <Text style={styles.totalAmount}>
+          <Text style={styles.totalPrice}>
             {ticketPrice.toLocaleString('vi-VN')}đ
           </Text>
         </View>
 
         <TouchableOpacity
-          style={styles.continueBtn}
-          activeOpacity={0.85}
-          onPress={handleNext}
-        >
-          <Text style={styles.continueBtnText}>Tiếp tục chọn ghế</Text>
+  style={[
+    styles.continueButton,
+    !canContinue && { opacity: 0.45 },
+  ]}
+  activeOpacity={0.85}
+  disabled={!canContinue}
+  onPress={handleNext}
+>
+          <Text style={styles.continueButtonText}>Tiếp tục chọn ghế</Text>
         </TouchableOpacity>
       </View>
-
-      {/* Modal Xung Đột (giữ nguyên để không gây lỗi logic) */}
-      <ShowtimeConflictModal
-        visible={conflictModalVisible}
-        movie={movie}
-        defaultCinema={selectedCinema?.name || 'CineNow Landmark 81'}
-        defaultDate={selectedDate}
-        onClose={() => setConflictModalVisible(false)}
-        onApplyShowtime={(time) => {
-          setSelectedTime(time);
-          setConflictModalVisible(false);
-        }}
-      />
     </View>
   );
 }
@@ -343,106 +355,82 @@ const styles = StyleSheet.create({
   },
   topBar: {
     paddingTop: 45,
-    paddingHorizontal: 16,
-    paddingBottom: 14,
+    paddingHorizontal: 20,
+    paddingBottom: 12,
     backgroundColor: '#0B0B0B',
+  },
+  backButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
   },
-  conflictBtn: {
-    backgroundColor: '#27272A',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#3F3F46',
-  },
-  conflictBtnText: {
-    color: '#EAB308',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  circularBackBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#1E1E1E',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 14,
-  },
-  backChevron: {
+  backArrow: {
     color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: 'bold',
+    fontSize: 18,
+    marginRight: 8,
   },
   topBarTitle: {
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
   },
-  breadcrumbBar: {
+  breadcrumbContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#1A1A1A',
+    borderBottomColor: '#18181B',
   },
   stepItem: {
     alignItems: 'center',
-    position: 'relative',
-    paddingBottom: 4,
   },
   stepText: {
-    color: '#555555',
-    fontSize: 11,
+    color: '#71717A',
+    fontSize: 12,
     fontWeight: '600',
   },
   stepActive: {
-    color: '#FFFFFF',
+    color: '#E50914',
     fontWeight: 'bold',
   },
-  activeUnderline: {
-    position: 'absolute',
-    bottom: -6,
+  stepIndicatorActive: {
     height: 2,
     width: '100%',
     backgroundColor: '#E50914',
+    marginTop: 4,
     borderRadius: 1,
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingTop: 16,
   },
-  movieCard: {
+  movieInfoBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#141414',
-    borderRadius: 14,
+    backgroundColor: '#18181B',
+    borderRadius: 16,
     padding: 12,
-    marginBottom: 16,
+    marginBottom: 18,
     borderWidth: 1,
-    borderColor: '#202020',
+    borderColor: '#27272A',
   },
   movieIconBox: {
-    width: 42,
-    height: 42,
+    width: 40,
+    height: 40,
     borderRadius: 10,
-    backgroundColor: '#B91C1C',
+    backgroundColor: '#E50914',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   },
-  movieIconText: {
-    fontSize: 20,
+  movieIcon: {
+    fontSize: 18,
   },
-  movieTextBox: {
+  movieDetails: {
     flex: 1,
   },
   movieTitle: {
@@ -452,89 +440,89 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   movieMeta: {
-    color: '#777777',
+    color: '#71717A',
     fontSize: 12,
   },
   changeMovieText: {
     color: '#E50914',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
+    paddingHorizontal: 4,
   },
   datesRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    marginBottom: 20,
   },
   dateCard: {
     flex: 1,
-    backgroundColor: '#141414',
+    backgroundColor: '#18181B',
     borderRadius: 14,
     paddingVertical: 10,
     alignItems: 'center',
-    marginHorizontal: 3,
+    marginHorizontal: 4,
     borderWidth: 1,
-    borderColor: '#202020',
-    minHeight: 74,
-    justifyContent: 'center',
+    borderColor: '#27272A',
   },
   dateCardActive: {
     backgroundColor: '#E50914',
     borderColor: '#E50914',
   },
   dateDayOfWeek: {
-    color: '#777777',
-    fontSize: 11,
+    color: '#71717A',
+    fontSize: 12,
     fontWeight: '500',
-    marginBottom: 2,
+    marginBottom: 4,
   },
   dateDayNumber: {
     color: '#FFFFFF',
-    fontSize: 19,
+    fontSize: 17,
     fontWeight: 'bold',
   },
   dateLabel: {
-    color: '#FFFFFF',
-    fontSize: 9,
+    color: '#A1A1AA',
+    fontSize: 10,
     marginTop: 2,
   },
-  dateLabelPlaceholder: {
-    height: 12,
-  },
-  textWhite: {
+  dateTextActive: {
     color: '#FFFFFF',
   },
   loadingBox: {
-    paddingVertical: 30,
+    paddingVertical: 40,
     alignItems: 'center',
+  },
+  loadingText: {
+    color: '#71717A',
+    marginTop: 10,
   },
   cinemasList: {
     gap: 16,
   },
-  cinemaCard: {
-    backgroundColor: '#141414',
-    borderRadius: 16,
+  cinemaBlock: {
+    backgroundColor: '#18181B',
+    borderRadius: 18,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#202020',
+    borderColor: '#27272A',
   },
   cinemaHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 12,
   },
-  cinemaIconBox: {
-    width: 36,
-    height: 36,
+  cinemaIconSquare: {
+    width: 38,
+    height: 38,
     borderRadius: 10,
-    backgroundColor: '#B91C1C',
+    backgroundColor: '#E50914',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10,
+    marginRight: 12,
   },
   cinemaIconText: {
-    fontSize: 18,
+    fontSize: 16,
   },
-  cinemaTitleBox: {
+  cinemaTextContainer: {
     flex: 1,
   },
   cinemaName: {
@@ -543,13 +531,13 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   cinemaDistance: {
-    color: '#777777',
+    color: '#71717A',
     fontSize: 12,
-    marginTop: 1,
+    marginTop: 2,
   },
-  roomLabel: {
-    color: '#777777',
-    fontSize: 11,
+  roomTag: {
+    color: '#A1A1AA',
+    fontSize: 12,
     fontWeight: '600',
     marginBottom: 12,
   },
@@ -559,24 +547,22 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 14,
   },
-  timeBtn: {
-    backgroundColor: '#1E1E1E',
-    paddingVertical: 9,
+  timeChip: {
+    backgroundColor: '#27272A',
+    paddingVertical: 10,
     paddingHorizontal: 16,
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#2B2B2B',
-    minWidth: 72,
-    alignItems: 'center',
+    borderColor: '#3F3F46',
   },
-  timeBtnActive: {
+  timeChipActive: {
     backgroundColor: '#E50914',
     borderColor: '#E50914',
   },
-  timeBtnDisabled: {
-    backgroundColor: '#161616',
-    borderColor: '#1E1E1E',
-    opacity: 0.4,
+  timeChipDisabled: {
+    backgroundColor: '#141416',
+    borderColor: '#222225',
+    opacity: 0.5,
   },
   timeText: {
     color: '#FFFFFF',
@@ -588,7 +574,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   timeTextDisabled: {
-    color: '#555555',
+    color: '#52525B',
   },
   legendRow: {
     flexDirection: 'row',
@@ -599,13 +585,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   legendDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
     marginRight: 6,
   },
   legendText: {
-    color: '#777777',
+    color: '#71717A',
     fontSize: 11,
   },
   bottomBar: {
@@ -613,38 +599,37 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#101010',
+    backgroundColor: '#121214',
     borderTopWidth: 1,
-    borderTopColor: '#1E1E1E',
-    paddingHorizontal: 16,
+    borderTopColor: '#27272A',
+    paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 24,
-  },
-  totalRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
   },
-  totalLabel: {
-    color: '#777777',
-    fontSize: 13,
-  },
-  totalAmount: {
-    color: '#E50914',
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-  continueBtn: {
-    backgroundColor: '#E50914',
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
+  totalInfo: {
     justifyContent: 'center',
   },
-  continueBtnText: {
+  totalLabel: {
+    color: '#71717A',
+    fontSize: 12,
+  },
+  totalPrice: {
+    color: '#E50914',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  continueButton: {
+    backgroundColor: '#E50914',
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 14,
+  },
+  continueButtonText: {
     color: '#FFFFFF',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: 'bold',
   },
 });

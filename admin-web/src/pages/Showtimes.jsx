@@ -10,9 +10,18 @@ import {
   RefreshCw,
   Search,
   Ticket,
+  Plus,
+  Pencil,
+  X,
 } from "lucide-react";
-import { getShowtimes } from "../services/api";
-
+import {
+  getShowtimes,
+  getMovies,
+  getCinemas,
+  createShowtime,
+    updateShowtime,
+} from "../services/api";
+import "./Showtimes.css";
 const TIME_ZONE = "Asia/Ho_Chi_Minh";
 const WEEKDAYS = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
 
@@ -48,15 +57,33 @@ function getStatus(showtime, now) {
     return { label: "Đã kết thúc", type: "past" };
   }
 
-  const start = `${showtime.date} ${showtime.startTime}`;
-  const end = `${showtime.date} ${showtime.endTime}`;
-  const current = `${now.date} ${now.time}`;
+  const start = new Date(
+    `${showtime.date}T${showtime.startTime}:00+07:00`
+  );
 
-  if (end < current) {
+  const end = new Date(
+    `${showtime.date}T${showtime.endTime}:00+07:00`
+  );
+
+  // Suất chiếu kết thúc vào ngày hôm sau
+  if (end < start) {
+    end.setTime(end.getTime() + 24 * 60 * 60 * 1000);
+  }
+
+  const current = new Date();
+
+  if (
+    Number.isNaN(start.getTime()) ||
+    Number.isNaN(end.getTime())
+  ) {
+    return { label: "Không xác định", type: "past" };
+  }
+
+  if (current >= end) {
     return { label: "Đã qua", type: "past" };
   }
 
-  if (start <= current && current <= end) {
+  if (current >= start) {
     return { label: "Đang chiếu", type: "playing" };
   }
 
@@ -75,6 +102,23 @@ function formatDate(date) {
 
 export default function Showtimes() {
   const [showtimes, setShowtimes] = useState([]);
+  const [movies, setMovies] = useState([]);
+const [cinemas, setCinemas] = useState([]);
+const [showCreateForm, setShowCreateForm] = useState(false);
+const [saving, setSaving] = useState(false);
+const [editingShowtime, setEditingShowtime] = useState(null);
+const [formError, setFormError] = useState("");
+
+const [form, setForm] = useState({
+  movieId: "",
+  cinemaId: "",
+  room: "",
+  format: "2D PHỤ ĐỀ",
+  date: "",
+  startTime: "",
+  price: "95000",
+  bufferMinutes: "15",
+});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
@@ -198,14 +242,339 @@ export default function Showtimes() {
     setSelectedDate(current.date);
     setNow(current);
   }
+  async function openEditForm(item) {
+  setFormError("");
+  setError("");
 
-  return (
+  try {
+    const [movieList, cinemaList] = await Promise.all([
+      getMovies(),
+      getCinemas(),
+    ]);
+
+    setMovies(movieList);
+    setCinemas(cinemaList);
+
+    setEditingShowtime(item);
+
+    setForm({
+      movieId: String(item.movieId?._id || item.movieId || ""),
+      cinemaId: String(item.cinemaId?._id || item.cinemaId || ""),
+      room: item.room || "",
+      format: item.format || "2D PHỤ ĐỀ",
+      date: item.date || "",
+      startTime: item.startTime || "",
+      price: String(item.price ?? 95000),
+      bufferMinutes: String(item.bufferMinutes ?? 15),
+    });
+
+    setShowCreateForm(true);
+  } catch (err) {
+    setError(err.message || "Không thể tải dữ liệu chỉnh sửa.");
+  }
+}
+async function openCreateForm() {
+  setFormError("");
+  setError("");
+  setEditingShowtime(null);
+
+  try {
+    const [movieList, cinemaList] = await Promise.all([
+      getMovies(),
+      getCinemas(),
+    ]);
+
+    setMovies(movieList);
+    setCinemas(cinemaList);
+
+    setForm({
+      movieId: "",
+      cinemaId: "",
+      room: "",
+      format: "2D PHỤ ĐỀ",
+      date: getVietnamNow().date,
+      startTime: "",
+      price: "95000",
+      bufferMinutes: "15",
+    });
+
+    setShowCreateForm(true);
+  } catch (err) {
+    setError(err.message || "Không thể tải phim và rạp.");
+  }
+}
+
+function updateForm(field, value) {
+  setForm((current) => ({
+    ...current,
+    [field]: value,
+  }));
+}
+
+async function handleCreateShowtime(event) {
+  event.preventDefault();
+
+  if (saving) return;
+
+  const price = Number(form.price);
+
+  if (!Number.isFinite(price) || price <= 0) {
+    setFormError("Giá vé phải lớn hơn 0.");
+    return;
+  }
+
+  try {
+    setSaving(true);
+    setFormError("");
+
+   if (editingShowtime) {
+  const cinema = cinemas.find(
+    (item) => String(item._id) === form.cinemaId
+  );
+
+  const price = Number(form.price);
+  const bufferMinutes = Number(form.bufferMinutes);
+
+  if (!cinema) {
+    throw new Error("Không tìm thấy rạp chiếu hợp lệ.");
+  }
+
+  await updateShowtime(editingShowtime._id, {
+    movieId: form.movieId,
+    cinemaId: form.cinemaId,
+    cinemaName: cinema.name,
+    room: form.room.trim(),
+    format: form.format,
+    date: form.date,
+    startTime: form.startTime,
+    price,
+    bufferMinutes,
+  });
+}else {
+      const cinema = cinemas.find(
+        (item) => String(item._id) === form.cinemaId
+      );
+
+      const bufferMinutes = Number(form.bufferMinutes);
+
+      if (
+        !cinema ||
+        !form.movieId ||
+        !form.room.trim() ||
+        !form.date ||
+        !form.startTime ||
+        !Number.isInteger(bufferMinutes) ||
+        bufferMinutes < 0
+      ) {
+        setFormError("Thông tin suất chiếu không hợp lệ.");
+        return;
+      }
+
+      await createShowtime({
+        movieId: form.movieId,
+        cinemaId: form.cinemaId,
+        cinemaName: cinema.name,
+        room: form.room.trim(),
+        format: form.format,
+        date: form.date,
+        startTime: form.startTime,
+        price,
+        bufferMinutes,
+      });
+    }
+
+    setShowCreateForm(false);
+    setEditingShowtime(null);
+    await loadShowtimes();
+  } catch (err) {
+    setFormError(err.message || "Không thể lưu suất chiếu.");
+  } finally {
+    setSaving(false);
+  }
+}
+    return (
     <div className="showtimes-page">
+      {showCreateForm && (
+  <div className="st-modal-overlay">
+    <div
+      className="st-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="st-modal-title"
+    >
+      <div className="st-modal-header">
+        <h3 id="st-modal-title">
+  {editingShowtime ? "Sửa suất chiếu" : "Thêm suất chiếu"}
+</h3>
+
+        <button
+          type="button"
+          onClick={() => setShowCreateForm(false)}
+          disabled={saving}
+          aria-label="Đóng"
+        >
+          <X size={20} />
+        </button>
+      </div>
+
+      <form onSubmit={handleCreateShowtime}>
+        <label>
+          Phim
+          <select
+            required
+            disabled={Boolean(editingShowtime)}
+            value={form.movieId}
+            onChange={(e) =>
+              updateForm("movieId", e.target.value)
+            }
+          >
+            <option value="">Chọn phim</option>
+            {movies.map((movie) => (
+              <option key={movie._id} value={movie._id}>
+                {movie.title}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Rạp
+          <select
+            required
+            value={form.cinemaId}
+            disabled={Boolean(editingShowtime)}
+            onChange={(e) =>
+              updateForm("cinemaId", e.target.value)
+            }
+          >
+            <option value="">Chọn rạp</option>
+            {cinemas.map((cinema) => (
+              <option key={cinema._id} value={cinema._id}>
+                {cinema.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Phòng chiếu
+          <input
+            required
+            disabled={Boolean(editingShowtime)}
+            value={form.room}
+            onChange={(e) =>
+              updateForm("room", e.target.value)
+            }
+            placeholder="Ví dụ: PHÒNG 01"
+          />
+        </label>
+
+        <label>
+          Định dạng
+          <select
+            value={form.format}
+            onChange={(e) =>
+              updateForm("format", e.target.value)
+            }
+          >
+            <option value="2D PHỤ ĐỀ">2D PHỤ ĐỀ</option>
+            <option value="2D LỒNG TIẾNG">2D LỒNG TIẾNG</option>
+            <option value="3D PHỤ ĐỀ">3D PHỤ ĐỀ</option>
+            <option value="3D LỒNG TIẾNG">3D LỒNG TIẾNG</option>
+          </select>
+        </label>
+
+        <label>
+          Ngày chiếu
+          <input
+            required
+            type="date"
+            disabled={Boolean(editingShowtime)}
+            value={form.date}
+            onChange={(e) =>
+              updateForm("date", e.target.value)
+            }
+          />
+        </label>
+
+        <label>
+          Giờ bắt đầu
+          <input
+            required
+
+            type="time"
+            value={form.startTime}
+            onChange={(e) =>
+              updateForm("startTime", e.target.value)
+            }
+          />
+        </label>
+
+        <label>
+          Giá vé (VNĐ)
+          <input
+            required
+            type="number"
+            min="1"
+            value={form.price}
+            onChange={(e) =>
+              updateForm("price", e.target.value)
+            }
+          />
+        </label>
+
+        <label>
+          Thời gian đệm (phút)
+          <input
+            required
+            type="number"
+            min="0"
+            disabled={Boolean(editingShowtime)}
+            value={form.bufferMinutes}
+            onChange={(e) =>
+              updateForm("bufferMinutes", e.target.value)
+            }
+          />
+        </label>
+
+        {formError && (
+          <p className="st-form-error">{formError}</p>
+        )}
+
+        <div className="st-modal-actions">
+          <button
+            type="button"
+            onClick={() => setShowCreateForm(false)}
+            disabled={saving}
+          >
+            Hủy
+          </button>
+
+          <button type="submit" disabled={saving}>
+  {saving
+    ? "Đang lưu..."
+    : editingShowtime
+      ? "Lưu thay đổi"
+      : "Tạo suất chiếu"}
+</button>
+        </div>
+            </form>
+    </div>
+  </div>
+)}
       <div className="st-page-heading">
         <div>
           <h2>Quản lý suất chiếu</h2>
           <p>Quản lý lịch chiếu phim trên hệ thống CineNow.</p>
         </div>
+        <button
+  type="button"
+  className="st-create-btn"
+  onClick={openCreateForm}
+>
+  <Plus size={17} />
+  Thêm suất chiếu
+</button>
 
         <button
           className="st-refresh-btn"
@@ -216,6 +585,7 @@ export default function Showtimes() {
           <RefreshCw size={17} />
           {loading ? "Đang tải..." : "Làm mới"}
         </button>
+
       </div>
 
       <div className="st-stats">
@@ -395,6 +765,7 @@ export default function Showtimes() {
                   <th>Phòng</th>
                   <th>Giá vé</th>
                   <th>Trạng thái</th>
+                  <th>Thao tác</th>
                 </tr>
               </thead>
 
@@ -437,6 +808,16 @@ export default function Showtimes() {
                           {status.label}
                         </span>
                       </td>
+                      <td>
+  <button
+    type="button"
+    className="st-edit-btn"
+    onClick={() => openEditForm(item)}
+  >
+    <Pencil size={15} />
+    Sửa
+  </button>
+</td>
                     </tr>
                   );
                 })}

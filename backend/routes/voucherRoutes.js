@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const Voucher = require('../models/Voucher');
 const UserVoucher = require('../models/UserVoucher');
 const { authMiddleware, optionalAuthMiddleware } = require('../middleware/auth');
+const { requireAuth, requireAdmin } = require('../middleware/adminAuth');
 const { sampleVouchers } = require('../seedVouchers');
 
 // Bộ nhớ dự phòng khi MongoDB chưa kết nối
@@ -408,7 +409,7 @@ router.post('/validate', optionalAuthMiddleware, async (req, res) => {
  * 5. TẠO VOUCHER MỚI (Dành cho Quản trị viên)
  * POST /api/vouchers/admin
  */
-router.post('/admin', async (req, res) => {
+router.post('/admin', requireAuth, requireAdmin, async (req, res) => {
   try {
     const {
       code,

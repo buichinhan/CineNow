@@ -30,11 +30,17 @@ const userSchema = new mongoose.Schema(
       minlength: 8,
       select: false,
     },
+   loyaltyPoints: {
+  type: Number,
+  default: 120,
+  min: 0,
+},
 
-    loyaltyPoints: {
-      type: Number,
-      default: 120,
-    },
+loyaltyPointsDebt: {
+  type: Number,
+  default: 0,
+  min: 0,
+},
 
     // Phân quyền tài khoản CineNow
     role: {
