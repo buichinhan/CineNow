@@ -12,6 +12,7 @@ export default function CancelModal({
   ticket,
   onClose,
   onConfirm,
+  loading = false,
 }) {
   if (!ticket) return null;
 
@@ -96,15 +97,19 @@ export default function CancelModal({
               <Text style={styles.keepButtonText}>Giữ vé</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.cancelButton}
-              onPress={() => onConfirm(ticket.id)}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.cancelButtonText}>
-                Xác nhận hủy
-              </Text>
-            </TouchableOpacity>
+          <TouchableOpacity
+  style={[
+    styles.cancelButton,
+    loading && { opacity: 0.5 },
+  ]}
+  onPress={() => onConfirm(ticket.id)}
+  disabled={loading}
+  activeOpacity={0.8}
+>
+  <Text style={styles.cancelButtonText}>
+    {loading ? 'Đang hủy vé...' : 'Xác nhận hủy'}
+  </Text>
+</TouchableOpacity>
           </View>
         </View>
       </View>

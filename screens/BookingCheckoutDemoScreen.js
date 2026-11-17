@@ -343,12 +343,19 @@ export default function BookingCheckoutDemoScreen({
         holdToken: bookingData?.holdToken,
       };
 
+if (!token) {
+  Alert.alert(
+    'Phiên đăng nhập không hợp lệ',
+    'Vui lòng đăng nhập lại trước khi đặt vé.'
+  );
+  return;
+}
       const res = await fetch(`${API_BASE_URL}/bookings`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
         body: JSON.stringify(payload),
       });
 
@@ -356,8 +363,15 @@ export default function BookingCheckoutDemoScreen({
 
       if (res.ok && json.success) {
         const booking = json.data;
-        const bookingCode = booking.bookingCode || 'CN-' + Math.floor(100000 + Math.random() * 900000);
+const bookingCode = booking?.bookingCode;
 
+if (!bookingCode || !booking?._id) {
+  Alert.alert(
+    'Không thể xác nhận vé',
+    'Máy chủ chưa trả về thông tin đặt vé hợp lệ. Vui lòng kiểm tra Vé của tôi trước khi thử lại.'
+  );
+  return;
+}
         let detailMsg = `Mã vé: ${bookingCode}\n`;
         detailMsg += `Phim: ${selectedMovie.name}\n`;
         detailMsg += `Ghế: ${seatsList.join(', ')}\n`;
@@ -377,26 +391,11 @@ export default function BookingCheckoutDemoScreen({
           {
             text: 'Xem vé của tôi',
             onPress: () => {
-              if (onComplete) {
-                onComplete({
-                  ...booking,
-                  movieTitle: selectedMovie.name,
-                  poster: selectedMovie.poster,
-                  cinemaName: selectedMovie.cinema,
-                  room: selectedMovie.room,
-                  date: selectedMovie.date,
-                  time: selectedMovie.time,
-                  seats: seatsList,
-                  seatTotal: ticketSubtotal,
-                  concessions: concessionsPayload,
-                  concessionsTotal: comboSubtotal,
-                  totalPrice: finalTotal,
-                  voucherCode: appliedVoucher?.code,
-                  pointsUsed: pointsToUse,
-                  pointsEarned: expectedPointsEarned,
-                  status: 'confirmed',
-                });
-              }
+
+if (onComplete) {
+  onComplete(booking);
+}
+
             },
           },
         ]);

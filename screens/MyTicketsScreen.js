@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState ,useEffect,useCallback} from 'react';
 import {
   View,
   Text,
@@ -10,11 +10,10 @@ import {
   SafeAreaView,
   Alert,
 } from 'react-native';
-
-import { initialTickets } from '../data/mockTickets';
+import { getMyBookings, cancelBookingApi } from '../api';
 import TicketDetailScreen from './TicketDetailScreen';
 import CancelModal from '../components/CancelModal';
-import { cancelBookingApi } from '../api';
+
 
 const RED = '#E50914';
 const BG = '#0B0B0B';
@@ -27,19 +26,56 @@ const TABS = [
   { key: 'cancelled', label: 'Đã hủy' },
 ];
 
-export default function MyTicketsScreen({ onBack, tickets: externalTickets, onTicketsChange, token }) {
-  const [tickets, setTickets] = useState(externalTickets || initialTickets);
+export default function MyTicketsScreen({
+  onBack,
+  user,
+  token,
+  tickets: externalTickets,
+  onTicketsChange,
+}) {
+  const [tickets, setTickets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [activeTab, setActiveTab] = useState('confirmed');
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [ticketToCancel, setTicketToCancel] = useState(null);
   const [cancelModalVisible, setCancelModalVisible] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
-  React.useEffect(() => {
-    if (externalTickets && Array.isArray(externalTickets)) {
-      setTickets(externalTickets);
+  const loadTickets = useCallback(async () => {
+    setLoading(true);
+    setLoadError('');
+
+    if (!token) {
+      setTickets([]);
+      setLoading(false);
+      return;
     }
-  }, [externalTickets]);
 
+    try {
+      const bookings = await getMyBookings(token);
+
+      const normalizedTickets = bookings.map((booking) => ({
+        ...booking,
+        id: String(booking._id || booking.id),
+        bookingCode: booking.bookingCode || 'Chưa có mã',
+        seats: Array.isArray(booking.seats) ? booking.seats : [],
+        poster: booking.poster || '',
+        status: booking.status || 'confirmed',
+      }));
+
+      setTickets(normalizedTickets);
+    } catch (error) {
+      setTickets([]);
+      setLoadError(error.message || 'Không thể tải danh sách vé.');
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    loadTickets();
+  }, [loadTickets]);
   const filteredTickets = tickets.filter(
     (ticket) => ticket.status === activeTab
   );
@@ -53,59 +89,78 @@ export default function MyTicketsScreen({ onBack, tickets: externalTickets, onTi
   };
 
   const confirmCancel = async (ticketId) => {
-    const ticket = tickets.find((item) => item.id === ticketId);
+    if (cancelling) return;
 
-    if (!ticket || ticket.status !== 'confirmed') {
+    const ticket = tickets.find(
+      (item) =>
+        item.id === ticketId ||
+        item._id === ticketId ||
+        item.bookingCode === ticketId
+    );
+
+    if (!ticket || ticket.status !== "confirmed") {
       setCancelModalVisible(false);
       setTicketToCancel(null);
       return;
     }
 
+    setCancelling(true);
+
     try {
-      if (token && (ticket.id || ticket.bookingCode)) {
-        await cancelBookingApi(ticket.id || ticket.bookingCode, token);
+      const bookingId =
+        ticket.id || ticket._id || ticket.bookingCode;
+
+      await cancelBookingApi(bookingId, token);
+
+      const updatedTickets = tickets.map((item) =>
+        item.id === ticketId ||
+        item._id === ticketId ||
+        item.bookingCode === ticketId
+          ? { ...item, status: "cancelled" }
+          : item
+      );
+
+      setTickets(updatedTickets);
+
+      if (onTicketsChange) {
+        onTicketsChange(updatedTickets);
       }
-    } catch (err) {
-      console.warn('Lỗi gọi API hủy vé:', err.message);
+
+      setCancelModalVisible(false);
+      setTicketToCancel(null);
+      setSelectedTicket(null);
+      setActiveTab("cancelled");
+
+      await loadTickets();
+
+      Alert.alert(
+        "Hủy vé thành công",
+        "Vé đã được hủy và hệ thống đã xử lý quyền lợi hoàn trả theo quy định."
+      );
+    } catch (error) {
+      Alert.alert(
+        "Không thể hủy vé",
+        error.message || "Vui lòng thử lại."
+      );
+    } finally {
+      setCancelling(false);
     }
-
-    const updatedTickets = tickets.map((item) =>
-      item.id === ticketId
-        ? {
-            ...item,
-            status: 'cancelled',
-            refundStatus: 'Đã hủy & Hoàn điểm thành viên',
-          }
-        : item
-    );
-
-    setTickets(updatedTickets);
-    if (onTicketsChange) {
-      onTicketsChange(updatedTickets);
-    }
-
-    setCancelModalVisible(false);
-    setTicketToCancel(null);
-    setSelectedTicket(null);
-    setActiveTab('cancelled');
-
-    Alert.alert(
-      'Hủy vé thành công',
-      'Đơn vé đã được hủy. Điểm thành viên đã sử dụng và lượt voucher (nếu có) đã được hoàn trả lại tài khoản của bạn.'
-    );
   };
-
-  const renderTicket = ({ item }) => (
+const renderTicket = ({ item }) => (
     <TouchableOpacity
       style={styles.ticketCard}
       activeOpacity={0.85}
       onPress={() => setSelectedTicket(item)}
     >
-      <Image
-        source={{ uri: item.poster }}
-        style={styles.poster}
-        resizeMode="cover"
-      />
+    {item.poster ? (
+  <Image
+    source={{ uri: item.poster }}
+    style={styles.poster}
+    resizeMode="cover"
+  />
+) : (
+  <View style={styles.poster} />
+)}
 
       <View style={styles.ticketInfo}>
         <Text style={styles.movieTitle} numberOfLines={2}>
@@ -180,6 +235,7 @@ export default function MyTicketsScreen({ onBack, tickets: externalTickets, onTi
         <CancelModal
           visible={cancelModalVisible}
           ticket={ticketToCancel}
+          loading={cancelling}
           onClose={() => {
             setCancelModalVisible(false);
             setTicketToCancel(null);
@@ -252,9 +308,21 @@ export default function MyTicketsScreen({ onBack, tickets: externalTickets, onTi
           );
         })}
       </View>
+{loading && (
+  <Text style={{ color: '#FFFFFF', textAlign: 'center', margin: 12 }}>
+    Đang tải vé của bạn...
+  </Text>
+)}
 
+{!!loadError && (
+  <TouchableOpacity onPress={loadTickets}>
+    <Text style={{ color: '#FF7777', textAlign: 'center', margin: 12 }}>
+      {loadError} — Nhấn để thử lại
+    </Text>
+  </TouchableOpacity>
+)}
       <FlatList
-        data={filteredTickets}
+        data={loading || loadError ? [] : filteredTickets}
         keyExtractor={(item) => item.id}
         renderItem={renderTicket}
         contentContainerStyle={[
@@ -262,7 +330,7 @@ export default function MyTicketsScreen({ onBack, tickets: externalTickets, onTi
           filteredTickets.length === 0 && styles.emptyListContent,
         ]}
         showsVerticalScrollIndicator={false}
-        ListEmptyComponent={
+        ListEmptyComponent={!loading && !loadError ? (
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyIcon}>
               {activeTab === 'confirmed'
@@ -295,12 +363,13 @@ export default function MyTicketsScreen({ onBack, tickets: externalTickets, onTi
               </TouchableOpacity>
             )}
           </View>
-        }
+        ) : null}
       />
 
       <CancelModal
         visible={cancelModalVisible}
         ticket={ticketToCancel}
+        loading={cancelling}
         onClose={() => {
           setCancelModalVisible(false);
           setTicketToCancel(null);

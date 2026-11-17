@@ -1,3 +1,4 @@
+
 import React from 'react';
 import {
   View,
@@ -7,6 +8,34 @@ import {
   ActivityIndicator,
 } from 'react-native';
 
+const COLORS = {
+  background: '#17191E',
+  surface: '#202329',
+  red: '#E50914',
+  redLight: '#FF4D57',
+  white: '#FFFFFF',
+  muted: '#9297A3',
+  border: '#343740',
+};
+
+const formatMoney = (value) => {
+  const amount = Number(value) || 0;
+  return `${amount.toLocaleString('vi-VN')}đ`;
+};
+
+const formatDate = (value) => {
+  if (!value) return 'Không giới hạn';
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Chưa xác định';
+
+  return [
+    String(date.getDate()).padStart(2, '0'),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    date.getFullYear(),
+  ].join('/');
+};
+
 export default function VoucherCard({
   voucher,
   isClaimed = false,
@@ -15,7 +44,7 @@ export default function VoucherCard({
   onApply,
   onPress,
   isClaiming = false,
-  mode = 'public', // 'public' | 'wallet' | 'select'
+  mode = 'public',
   isSelected = false,
 }) {
   const {
@@ -28,352 +57,460 @@ export default function VoucherCard({
     endDate,
     freeItemName,
     applicableFormats = [],
+    status,
   } = voucher || {};
 
-  const formatDate = (dateStr) => {
-    if (!dateStr) return '';
-    const d = new Date(dateStr);
-    return `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getFullYear()}`;
-  };
+  const isUsed = status === 'USED';
+  const isExpired =
+    status === 'EXPIRED' ||
+    (endDate &&
+      !Number.isNaN(new Date(endDate).getTime()) &&
+      new Date(endDate).getTime() < Date.now());
 
-  const renderBadge = () => {
-    if (discountType === 'PERCENTAGE') {
-      return (
-        <View style={styles.badgeContainer}>
-          <Text style={styles.badgeLarge}>{discountValue}%</Text>
-          <Text style={styles.badgeSmall}>GIẢM GIÁ</Text>
-        </View>
-      );
+  const isUnavailable = isUsed || isExpired;
+  const isPublicClaimed = mode === 'public' && isClaimed;
+  const isPublicDisabled =
+    mode === 'public' && (!canClaim || isClaiming);
+
+  const discountNumber = Number(discountValue) || 0;
+
+  let discountLabel = 'QUÀ';
+  let discountUnit = 'TẶNG KÈM';
+
+  if (discountType === 'PERCENTAGE') {
+    discountLabel = `${discountNumber}%`;
+    discountUnit = 'GIẢM GIÁ';
+  } else if (discountType === 'FIXED_AMOUNT') {
+    discountLabel =
+      discountNumber >= 1000
+        ? `${Number((discountNumber / 1000).toFixed(1))}K`
+        : `${discountNumber}đ`;
+    discountUnit = 'GIẢM THẲNG';
+  }
+
+  let buttonText = 'Lưu voucher';
+  let buttonDisabled = false;
+
+  if (mode === 'public') {
+    if (isUnavailable) {
+      buttonText = isUsed ? 'Đã sử dụng' : 'Đã hết hạn';
+      buttonDisabled = true;
+    } else if (isClaimed) {
+      buttonText = '✓ Đã trong ví';
+      buttonDisabled = true;
+    } else if (!canClaim) {
+      buttonText = 'Hết lượt';
+      buttonDisabled = true;
+    } else {
+      buttonDisabled = isClaiming;
     }
-    if (discountType === 'FIXED_AMOUNT') {
-      const displayValue =
-        discountValue >= 1000
-          ? `${Math.round(discountValue / 1000)}K`
-          : `${discountValue}đ`;
-      return (
-        <View style={styles.badgeContainer}>
-          <Text style={styles.badgeLarge}>{displayValue}</Text>
-          <Text style={styles.badgeSmall}>GIẢM THẲNG</Text>
-        </View>
-      );
+  } else if (isUnavailable) {
+    buttonText = isUsed ? 'Đã sử dụng' : 'Đã hết hạn';
+    buttonDisabled = true;
+  } else if (mode === 'select') {
+    buttonText = isSelected ? '✓ Đang áp dụng' : 'Chọn mã';
+  } else {
+    buttonText = 'Dùng ngay';
+  }
+
+  const handleAction = () => {
+    if (buttonDisabled || isClaiming) return;
+
+    if (mode === 'public') {
+      onClaim?.(voucher);
+    } else {
+      onApply?.(voucher);
     }
-    return (
-      <View style={styles.badgeContainer}>
-        <Text style={styles.badgeLarge}>QUÀ</Text>
-        <Text style={styles.badgeSmall}>TẶNG KÈM</Text>
-      </View>
-    );
   };
 
   return (
     <TouchableOpacity
       activeOpacity={onPress ? 0.85 : 1}
       onPress={onPress}
+      disabled={!onPress}
       style={[
-        styles.cardContainer,
-        isSelected && styles.cardContainerSelected,
+        styles.card,
+        isSelected && styles.cardSelected,
+        isUnavailable && styles.cardUnavailable,
       ]}
     >
-      {/* Cạnh vé bên trái */}
-      <View style={styles.leftStub}>
-        {renderBadge()}
-        <View style={styles.ticketPerforations}>
-          <View style={[styles.notch, styles.notchTop]} />
-          <View style={[styles.notch, styles.notchBottom]} />
-        </View>
-      </View>
+      <View style={styles.topAccent} />
 
-      {/* Đường nét đứt xé vé */}
-      <View style={styles.dashedLineContainer}>
-        <View style={styles.dashedLine} />
-      </View>
-
-      {/* Thông tin vé bên phải */}
-      <View style={styles.rightContent}>
-        <View style={styles.headerRow}>
-          <View style={styles.codeBadge}>
-            <Text style={styles.codeText}>{code}</Text>
+      <View style={styles.mainRow}>
+        <View style={styles.discountSection}>
+          <View style={styles.discountCircle}>
+            <Text style={styles.discountValue} numberOfLines={1}>
+              {discountLabel}
+            </Text>
+            <Text style={styles.discountUnit}>
+              {discountUnit}
+            </Text>
           </View>
-          <Text style={styles.expiryText}>HSD: {formatDate(endDate)}</Text>
+          <Text style={styles.cinemaLabel}>CINENOW</Text>
         </View>
 
-        <Text style={styles.title} numberOfLines={2}>
-          {title}
-        </Text>
+        <View style={styles.verticalDivider}>
+          <View style={styles.dividerLine} />
+        </View>
 
-        {freeItemName ? (
-          <Text style={styles.freeItemText}>🎁 Tặng: {freeItemName}</Text>
-        ) : null}
+        <View style={styles.infoSection}>
+          <View style={styles.topRow}>
+            <Text style={styles.eyebrow}>ƯU ĐÃI ĐẶC BIỆT</Text>
+            {isSelected && (
+              <View style={styles.selectedPill}>
+                <Text style={styles.selectedPillText}>ĐÃ CHỌN</Text>
+              </View>
+            )}
+          </View>
 
-        <View style={styles.conditionRow}>
+          <Text style={styles.title} numberOfLines={2}>
+            {title || 'Ưu đãi CineNow'}
+          </Text>
+
+          <View style={styles.codeRow}>
+            <Text style={styles.codeLabel}>MÃ</Text>
+            <Text style={styles.codeText} numberOfLines={1}>
+              {code || 'CINENOW'}
+            </Text>
+          </View>
+
           <Text style={styles.conditionText}>
-            Đơn tối thiểu:{' '}
-            <Text style={styles.conditionBold}>
-              {minOrderAmount
-                ? `${minOrderAmount.toLocaleString('vi-VN')}đ`
-                : '0đ'}
+            Đơn từ{' '}
+            <Text style={styles.conditionStrong}>
+              {formatMoney(minOrderAmount)}
             </Text>
           </Text>
-          {discountType === 'PERCENTAGE' && maxDiscountAmount > 0 && (
-            <Text style={styles.conditionText}>
-              {' · '}Tối đa:{' '}
-              <Text style={styles.conditionBold}>
-                {maxDiscountAmount.toLocaleString('vi-VN')}đ
+
+          {discountType === 'PERCENTAGE' &&
+            Number(maxDiscountAmount) > 0 && (
+              <Text style={styles.conditionText}>
+                Giảm tối đa{' '}
+                <Text style={styles.conditionStrong}>
+                  {formatMoney(maxDiscountAmount)}
+                </Text>
               </Text>
+            )}
+
+          {!!freeItemName && (
+            <Text style={styles.giftText} numberOfLines={2}>
+              🎁 Tặng {freeItemName}
             </Text>
           )}
         </View>
+      </View>
 
-        {applicableFormats && applicableFormats.length > 0 && (
-          <View style={styles.formatsContainer}>
-            {applicableFormats.map((f, i) => (
-              <View key={i} style={styles.formatChip}>
-                <Text style={styles.formatChipText}>{f}</Text>
+      <View style={styles.horizontalDivider}>
+        <View style={styles.cutoutLeft} />
+        <View style={styles.dashedHorizontal} />
+        <View style={styles.cutoutRight} />
+      </View>
+
+      {Array.isArray(applicableFormats) &&
+        applicableFormats.length > 0 && (
+          <View style={styles.formatRow}>
+            {applicableFormats.map((format, index) => (
+              <View
+                key={`${String(format)}-${index}`}
+                style={styles.formatChip}
+              >
+                <Text style={styles.formatText}>
+                  {String(format)}
+                </Text>
               </View>
             ))}
           </View>
         )}
 
-        {/* Nút hành động tuỳ chế độ */}
-        <View style={styles.actionRow}>
-          {mode === 'public' && (
-            <TouchableOpacity
-              style={[
-                styles.actionBtn,
-                isClaimed && styles.actionBtnClaimed,
-                !canClaim && !isClaimed && styles.actionBtnDisabled,
-              ]}
-              disabled={isClaimed || !canClaim || isClaiming}
-              onPress={() => onClaim && onClaim(voucher)}
-              activeOpacity={0.8}
-            >
-              {isClaiming ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <Text
-                  style={[
-                    styles.actionBtnText,
-                    isClaimed && styles.actionBtnTextClaimed,
-                  ]}
-                >
-                  {isClaimed
-                    ? '✓ Đã trong ví'
-                    : canClaim
-                    ? 'Lưu voucher'
-                    : 'Hết lượt'}
-                </Text>
-              )}
-            </TouchableOpacity>
-          )}
-
-          {mode === 'wallet' && (
-            <TouchableOpacity
-              style={styles.actionBtn}
-              onPress={() => onApply && onApply(voucher)}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.actionBtnText}>Dùng ngay</Text>
-            </TouchableOpacity>
-          )}
-
-          {mode === 'select' && (
-            <TouchableOpacity
-              style={[
-                styles.actionBtn,
-                isSelected && styles.actionBtnSelected,
-              ]}
-              onPress={() => onApply && onApply(voucher)}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.actionBtnText}>
-                {isSelected ? '✓ Đang áp dụng' : 'Chọn mã'}
-              </Text>
-            </TouchableOpacity>
-          )}
+      <View style={styles.footer}>
+        <View style={styles.expiryBlock}>
+          <Text style={styles.expiryLabel}>HẠN SỬ DỤNG</Text>
+          <Text style={styles.expiryValue}>
+            {formatDate(endDate)}
+          </Text>
         </View>
+
+        <TouchableOpacity
+          style={[
+            styles.actionButton,
+            (buttonDisabled || isPublicClaimed || isPublicDisabled) &&
+              styles.actionButtonDisabled,
+            isSelected &&
+              !buttonDisabled &&
+              styles.actionButtonSelected,
+          ]}
+          activeOpacity={0.8}
+          disabled={buttonDisabled}
+          onPress={handleAction}
+        >
+          {isClaiming && mode === 'public' ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Text
+              style={[
+                styles.actionText,
+                buttonDisabled && styles.actionTextDisabled,
+              ]}
+            >
+              {buttonText}
+            </Text>
+          )}
+        </TouchableOpacity>
       </View>
     </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  cardContainer: {
-    backgroundColor: '#181818',
-    borderRadius: 14,
+  card: {
+    backgroundColor: COLORS.background,
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#2E2E2E',
-    flexDirection: 'row',
-    marginBottom: 14,
+    borderColor: COLORS.border,
+    marginBottom: 16,
     overflow: 'hidden',
+    elevation: 5,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
   },
-  cardContainerSelected: {
-    borderColor: '#E50914',
+  cardSelected: {
+    borderColor: COLORS.red,
     borderWidth: 1.5,
   },
-  leftStub: {
-    width: 95,
-    backgroundColor: '#E50914',
+  cardUnavailable: {
+    opacity: 0.55,
+  },
+  topAccent: {
+    height: 3,
+    backgroundColor: COLORS.red,
+  },
+  mainRow: {
+    flexDirection: 'row',
+    minHeight: 158,
+  },
+  discountSection: {
+    width: 108,
+    paddingHorizontal: 8,
+    paddingTop: 20,
+    paddingBottom: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#25171B',
+  },
+  discountCircle: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: '#431B22',
+    borderWidth: 1,
+    borderColor: '#78303A',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 8,
-    position: 'relative',
+    paddingHorizontal: 3,
   },
-  badgeContainer: {
-    alignItems: 'center',
-  },
-  badgeLarge: {
-    color: '#FFFFFF',
-    fontSize: 22,
+  discountValue: {
+    fontSize: 25,
     fontWeight: '900',
-    letterSpacing: -0.5,
+    color: COLORS.white,
+    letterSpacing: -1,
+    includeFontPadding: false,
   },
-  badgeSmall: {
-    color: '#FFD7D7',
+  discountUnit: {
+    color: '#FF9DA3',
+    fontSize: 9,
+    fontWeight: '800',
+    marginTop: 3,
+    letterSpacing: 0.7,
+  },
+  cinemaLabel: {
+    marginTop: 12,
+    color: '#E9A0A6',
     fontSize: 10,
-    fontWeight: '700',
-    marginTop: 2,
-    letterSpacing: 0.5,
+    fontWeight: '900',
+    letterSpacing: 2,
   },
-  ticketPerforations: {
-    position: 'absolute',
-    right: -10,
-    top: 0,
-    bottom: 0,
-    justifyContent: 'space-between',
-    zIndex: 10,
-  },
-  notch: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#0B0B0B',
-  },
-  notchTop: {
-    marginTop: -10,
-  },
-  notchBottom: {
-    marginBottom: -10,
-  },
-  dashedLineContainer: {
+  verticalDivider: {
     width: 1,
-    height: '100%',
-    overflow: 'hidden',
+    paddingVertical: 14,
+    backgroundColor: '#25171B',
   },
-  dashedLine: {
-    height: '100%',
-    width: 1,
-    borderWidth: 1,
-    borderColor: '#3A3A3A',
+  dividerLine: {
+    flex: 1,
+    borderLeftWidth: 1,
+    borderColor: '#5C343A',
     borderStyle: 'dashed',
   },
-  rightContent: {
+  infoSection: {
     flex: 1,
-    padding: 14,
-    backgroundColor: '#1E1E1E',
+    minWidth: 0,
+    paddingHorizontal: 13,
+    paddingTop: 17,
+    paddingBottom: 14,
   },
-  headerRow: {
+  topRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  codeBadge: {
-    backgroundColor: '#2D1618',
-    borderColor: '#E50914',
-    borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  codeText: {
-    color: '#FF4A52',
-    fontWeight: 'bold',
-    fontSize: 11,
-    letterSpacing: 0.8,
-  },
-  expiryText: {
-    color: '#8E8E8E',
-    fontSize: 11,
-  },
-  title: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: 'bold',
-    lineHeight: 19,
-    marginBottom: 6,
-  },
-  freeItemText: {
-    color: '#4ADE80',
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 6,
-  },
-  conditionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
     flexWrap: 'wrap',
     marginBottom: 8,
+    gap: 5,
+  },
+  eyebrow: {
+    fontSize: 9,
+    color: COLORS.redLight,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  selectedPill: {
+    backgroundColor: '#173A2A',
+    borderRadius: 5,
+    paddingHorizontal: 5,
+    paddingVertical: 3,
+  },
+  selectedPillText: {
+    color: '#6EE7A5',
+    fontSize: 8,
+    fontWeight: '800',
+  },
+  title: {
+    fontSize: 15,
+    lineHeight: 21,
+    fontWeight: '800',
+    color: COLORS.white,
+    marginBottom: 11,
+  },
+  codeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    backgroundColor: '#302025',
+    borderRadius: 6,
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+    marginBottom: 11,
+  },
+  codeLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#F4A2A8',
+    marginRight: 7,
+  },
+  codeText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: COLORS.white,
+    letterSpacing: 0.5,
+    flexShrink: 1,
   },
   conditionText: {
-    color: '#9E9E9E',
     fontSize: 11,
+    color: COLORS.muted,
+    lineHeight: 17,
   },
-  conditionBold: {
-    color: '#D1D1D1',
-    fontWeight: '600',
+  conditionStrong: {
+    color: '#E7E8EC',
+    fontWeight: '700',
   },
-  formatsContainer: {
+  giftText: {
+    fontSize: 11,
+    color: '#80E6AC',
+    fontWeight: '700',
+    marginTop: 7,
+  },
+  horizontalDivider: {
+    height: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  cutoutLeft: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#0B0B0B',
+    marginLeft: -8,
+  },
+  dashedHorizontal: {
+    flex: 1,
+    height: 1,
+    borderTopWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: '#4A4D55',
+  },
+  cutoutRight: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#0B0B0B',
+    marginRight: -8,
+  },
+  formatRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    paddingHorizontal: 15,
+    paddingBottom: 7,
     gap: 6,
-    marginBottom: 10,
   },
   formatChip: {
-    backgroundColor: '#2A2A2A',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    backgroundColor: '#292C33',
+    borderRadius: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
-  formatChipText: {
-    color: '#C0C0C0',
+  formatText: {
     fontSize: 10,
-    fontWeight: 'bold',
+    color: '#C8CBD3',
+    fontWeight: '600',
   },
-  actionRow: {
+  footer: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginTop: 2,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 15,
+    paddingTop: 8,
+    paddingBottom: 15,
+    gap: 10,
   },
-  actionBtn: {
-    backgroundColor: '#E50914',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 8,
-    minWidth: 85,
+  expiryBlock: {
+    flex: 1,
+  },
+  expiryLabel: {
+    fontSize: 9,
+    color: '#818691',
+    fontWeight: '700',
+    letterSpacing: 0.7,
+    marginBottom: 5,
+  },
+  expiryValue: {
+    fontSize: 12,
+    color: '#E1E3E8',
+    fontWeight: '700',
+  },
+  actionButton: {
+    backgroundColor: COLORS.red,
+    minWidth: 106,
+    minHeight: 38,
+    borderRadius: 9,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  actionBtnClaimed: {
-    backgroundColor: '#2A2A2A',
-    borderWidth: 1,
-    borderColor: '#3F3F3F',
+  actionButtonDisabled: {
+    backgroundColor: '#383B43',
   },
-  actionBtnDisabled: {
-    backgroundColor: '#333333',
+  actionButtonSelected: {
+    backgroundColor: '#167A4C',
   },
-  actionBtnSelected: {
-    backgroundColor: '#16A34A',
+  actionText: {
+    color: COLORS.white,
+    fontSize: 11,
+    fontWeight: '800',
+    textAlign: 'center',
   },
-  actionBtnText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  actionBtnTextClaimed: {
-    color: '#9E9E9E',
+  actionTextDisabled: {
+    color: '#B7BBC4',
   },
 });

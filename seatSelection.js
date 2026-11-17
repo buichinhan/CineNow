@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -9,521 +10,559 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import { fetchSeats, holdSeatsApi, createBooking } from './api';
 
-// Sơ đồ ghế 6 hàng chuẩn xác đúng bố cục ảnh chụp
-const INITIAL_LAYOUT = {
-  rows: [
-    {
-      row: 'A',
-      type: 'standard',
-      price: 95000,
-      seats: [
-        { id: 'A1', number: '1', status: 'available' },
-        { id: 'A2', number: '2', status: 'available' },
-        { id: 'A3', number: '3', status: 'available' },
-        { id: 'A4', number: '4', status: 'available' },
-        { id: 'A5', number: '5', status: 'available' },
-        { id: 'A6', number: '6', status: 'available' },
-        { id: 'A7', number: '7', status: 'available' },
-        { id: 'A8', number: '8', status: 'available' },
-      ],
-    },
-    {
-      row: 'B',
-      type: 'standard',
-      price: 95000,
-      seats: [
-        { id: 'B1', number: '1', status: 'available' },
-        { id: 'B2', number: '2', status: 'available' },
-        { id: 'B3', number: '3', status: 'available' },
-        { id: 'B4', number: '4', status: 'available' },
-        { id: 'B5', number: '5', status: 'available' },
-        { id: 'B6', number: '6', status: 'available' },
-        { id: 'B7', number: '7', status: 'booked' },
-        { id: 'B8', number: '8', status: 'booked' },
-      ],
-    },
-    {
-      row: 'C',
-      type: 'vip',
-      price: 95000,
-      seats: [
-        { id: 'C1', number: '1', status: 'available' },
-        { id: 'C2', number: '2', status: 'available' },
-        { id: 'C3', number: '3', status: 'booked' },
-        { id: 'C4', number: '4', status: 'available' },
-        { id: 'C5', number: '5', status: 'available' },
-        { id: 'C6', number: '6', status: 'available' },
-        { id: 'C7', number: '7', status: 'available' },
-        { id: 'C8', number: '8', status: 'available' },
-      ],
-    },
-    {
-      row: 'D',
-      type: 'vip',
-      price: 95000,
-      seats: [
-        { id: 'D1', number: '1', status: 'available' },
-        { id: 'D2', number: '2', status: 'available' },
-        { id: 'D3', number: '3', status: 'available' },
-        { id: 'D4', number: '4', status: 'available' },
-        { id: 'D5', number: '5', status: 'available' },
-        { id: 'D6', number: '6', status: 'booked' },
-        { id: 'D7', number: '7', status: 'available' },
-        { id: 'D8', number: '8', status: 'available' },
-      ],
-    },
-    {
-      row: 'E',
-      type: 'vip',
-      price: 95000,
-      seats: [
-        { id: 'E1', number: '1', status: 'available' },
-        { id: 'E2', number: '2', status: 'available' },
-        { id: 'E3', number: '3', status: 'available' },
-        { id: 'E4', number: '4', status: 'available' },
-        { id: 'E5', number: '5', status: 'available' },
-        { id: 'E6', number: '6', status: 'available' },
-        { id: 'E7', number: '7', status: 'available' },
-        { id: 'E8', number: '8', status: 'available' },
-      ],
-    },
-    {
-      row: 'F',
-      type: 'sweetbox',
-      price: 190000,
-      seats: [
-        { id: 'F1-2', number: 'F1-2', status: 'available', isDouble: true },
-        { id: 'F3-4', number: 'F3-4', status: 'available', isDouble: true },
-        { id: 'F5-6', number: 'F5-6', status: 'available', isDouble: true },
-        { id: 'F7-8', number: 'F7-8', status: 'available', isDouble: true },
-      ],
-    },
-  ],
-};
+import { fetchSeats } from './api';
 
 export default function SeatSelectionScreen({
   movie,
   bookingData,
-  user,
   onBack,
   onContinue,
-  onComplete,
 }) {
-  const [loading, setLoading] = useState(false);
-  const [seatLayout, setSeatLayout] = useState(INITIAL_LAYOUT);
+  const [loading, setLoading] = useState(true);
+  const [seatLayout, setSeatLayout] = useState(null);
+  const [selectedSeats, setSelectedSeats] = useState([]);
+  const [loadError, setLoadError] = useState('');
 
-  // Mặc định chọn 4 ghế B5, B6, D3, D4 chuẩn như ảnh
-  const [selectedSeats, setSelectedSeats] = useState(
-    Array.isArray(bookingData?.selectedSeats) && bookingData.selectedSeats.length > 0
-      ? bookingData.selectedSeats
-      : ['B5', 'B6', 'D3', 'D4']
-  );
+  const movieTitle =
+    movie?.title ||
+    bookingData?.movie?.title ||
+    'Chưa chọn phim';
 
-  const [submitting, setSubmitting] = useState(false);
-  const [holdToken, setHoldToken] = useState(bookingData?.holdToken || null);
-  const [holdExpiresAt, setHoldExpiresAt] = useState(bookingData?.holdExpiresAt || null);
-  const [remainingSeconds, setRemainingSeconds] = useState(
-    bookingData?.remainingSeconds || null
-  );
-
-  const movieTitle = movie?.title || bookingData?.movie?.title || 'Hành Tinh Đỏ';
   const cinemaName =
-    bookingData?.cinemaName || bookingData?.cinema?.name || 'CineNow Landmark 81';
-  const roomName = bookingData?.room || 'Phòng 03';
-  const showDate = bookingData?.date || '16.10.2026';
-  const showTime = bookingData?.time || '19:00';
+    bookingData?.cinema?.name ||
+    bookingData?.cinemaName ||
+    '';
+
+  const roomName = bookingData?.room || '';
+
+  const showDate = bookingData?.date || '';
+  const showTime = bookingData?.time || '';
+
+  const movieId =
+    movie?._id ||
+    movie?.id ||
+    movie?.slug ||
+    bookingData?.movieId ||
+    '';
 
   useEffect(() => {
-    loadSeats();
-  }, []);
+    let active = true;
 
-  useEffect(() => {
-    if (remainingSeconds === null || remainingSeconds <= 0) return undefined;
-
-    const timer = setTimeout(() => {
-      setRemainingSeconds((seconds) => Math.max(0, seconds - 1));
-    }, 1000);
-
-    return () => clearTimeout(timer);
-  }, [remainingSeconds]);
-
-  useEffect(() => {
-    if (remainingSeconds !== 0 || !holdToken) return;
-
-    Alert.alert(
-      'Hết thời gian giữ ghế! ⏳',
-      'Đã hết thời gian giữ ghế tạm thời (5 phút). Các ghế bạn đang chọn đã được tự động giải phóng để nhường cho khách hàng khác.',
-      [
-        {
-          text: 'Chọn lại ghế',
-          onPress: () => {
-            setSelectedSeats([]);
-            setHoldToken(null);
-            setRemainingSeconds(null);
-            loadSeats(null);
-          },
-        },
-      ]
-    );
-  }, [remainingSeconds, holdToken]);
-
-  const loadSeats = async (token = holdToken) => {
-    try {
+    const loadSeats = async () => {
       setLoading(true);
-      const movieId = movie?._id || movie?.id || movie?.slug || 'hanh-tinh-do';
-      const data = await fetchSeats(
-        movieId,
-        cinemaName,
-        showDate,
-        showTime,
-        token,
-        roomName
-      );
+      setLoadError('');
+      setSeatLayout(null);
+      setSelectedSeats([]);
 
-      if (data && data.seatLayout && Array.isArray(data.seatLayout.rows)) {
+      if (
+        !movieId ||
+        !cinemaName ||
+        !showDate ||
+        !showTime
+      ) {
+        setLoadError(
+          'Thiếu thông tin phim hoặc suất chiếu. Vui lòng quay lại chọn suất.'
+        );
+        setLoading(false);
+        return;
+      }
+
+      try {
+       const data = await fetchSeats(
+  movieId,
+  cinemaName,
+  showDate,
+  showTime,
+  null,
+  roomName || 'PHÒNG 03'
+);
+
+        if (!active) return;
+
+        if (
+          !data?.seatLayout ||
+          !Array.isArray(data.seatLayout.rows)
+        ) {
+          throw new Error('Sơ đồ ghế không hợp lệ.');
+        }
+
         setSeatLayout(data.seatLayout);
-      }
-      if (data?.activeHold?.remainingSeconds) {
-        setRemainingSeconds(data.activeHold.remainingSeconds);
-        setHoldExpiresAt(data.activeHold.expiresAt);
-      }
-    } catch (err) {
-      console.warn('Sử dụng sơ đồ ghế chuẩn CineNow:', err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+      } catch (error) {
+        if (!active) return;
 
-  // Toggle chọn hoặc bỏ chọn ghế
-  const handleToggleSeat = (seat, row) => {
-    if (seat.status === 'booked') {
-      Alert.alert('Ghế đã đặt', 'Ghế này đã có người mua thành công.');
+        console.warn(
+          'Lỗi tải sơ đồ ghế:',
+          error?.message
+        );
+
+        setLoadError(
+          error?.message ||
+          'Không thể tải sơ đồ ghế. Vui lòng thử lại.'
+        );
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadSeats();
+
+    return () => {
+      active = false;
+    };
+}, [movieId, cinemaName, roomName, showDate, showTime]);
+  const handleToggleSeat = (seat) => {
+    if (
+      !seat?.id ||
+      seat.status === 'booked'
+    ) {
       return;
     }
 
-    if (seat.status === 'holding' && !seat.isMine && !selectedSeats.includes(seat.id)) {
-      Alert.alert(
-        'Ghế đang được giữ',
-        'Ghế này đang được khách hàng khác giữ tạm. Vui lòng chọn ghế khác hoặc chờ hết thời gian giữ.'
-      );
-      return;
-    }
+    setSelectedSeats((previous) => {
+      if (previous.includes(seat.id)) {
+        return previous.filter(
+          (id) => id !== seat.id
+        );
+      }
 
-    if (selectedSeats.includes(seat.id)) {
-      setSelectedSeats(selectedSeats.filter((id) => id !== seat.id));
-    } else {
-      setSelectedSeats([...selectedSeats, seat.id]);
-    }
+      return [...previous, seat.id];
+    });
   };
 
-  // Tính tổng tiền realtime
   const calculateTotal = () => {
-    if (!seatLayout || !seatLayout.rows) return 0;
+    if (!seatLayout?.rows) return 0;
+
     let total = 0;
+
     seatLayout.rows.forEach((row) => {
-      row.seats.forEach((seat) => {
-        if (selectedSeats.includes(seat.id)) {
-          total += row.price || (row.type === 'sweetbox' ? 190000 : 95000);
+      (row.seats || []).forEach((seat) => {
+        if (
+          selectedSeats.includes(seat.id) &&
+          seat.status !== 'booked'
+        ) {
+          total += Number(row.price || 0);
         }
       });
     });
+
     return total;
   };
 
   const totalPrice = calculateTotal();
 
-  const handleProceed = async () => {
-    if (selectedSeats.length === 0) {
-      Alert.alert('Chưa chọn ghế', 'Vui lòng chọn ít nhất 1 ghế để tiếp tục.');
+  const handleConfirmBooking = () => {
+    if (loading || !seatLayout) {
+      Alert.alert(
+        'Thông báo',
+        'Chưa tải được sơ đồ ghế. Vui lòng thử lại.'
+      );
       return;
     }
 
-    try {
-      setSubmitting(true);
-
-      const response = await holdSeatsApi({
-        cinemaName,
-        room: roomName,
-        date: showDate,
-        time: showTime,
-        seats: selectedSeats,
-        holdToken,
-        userId: user?._id || user?.id,
-        durationSeconds: 300,
-      });
-
-      const nextHoldToken = response.data?.holdToken || holdToken;
-      const nextHoldExpiresAt = response.data?.expiresAt || Date.now() + 300000;
-      const nextRemainingSeconds = response.data?.remainingSeconds || 300;
-
-      setHoldToken(nextHoldToken);
-      setHoldExpiresAt(nextHoldExpiresAt);
-      setRemainingSeconds(nextRemainingSeconds);
-
-      if (onContinue) {
-        onContinue({
-          movie: movie || bookingData?.movie,
-          bookingData,
-          cinemaName,
-          room: roomName,
-          date: showDate,
-          time: showTime,
-          selectedSeats,
-          seatTotal: totalPrice,
-          holdToken: nextHoldToken,
-          holdExpiresAt: nextHoldExpiresAt,
-          remainingSeconds: nextRemainingSeconds,
-        });
-      } else {
-        await handleConfirmBooking(nextHoldToken);
-      }
-    } catch (err) {
+    if (selectedSeats.length === 0) {
       Alert.alert(
-        'Không thể giữ ghế',
-        err.message || 'Ghế bạn chọn đang được người khác giữ hoặc đã bán. Vui lòng chọn lại.'
+        'Thông báo',
+        'Vui lòng chọn ít nhất một ghế.'
       );
-      loadSeats();
-      if (Array.isArray(err.conflictingSeats)) {
-        setSelectedSeats((seats) =>
-          seats.filter((id) => !err.conflictingSeats.includes(id))
-        );
-      }
-    } finally {
-      setSubmitting(false);
+      return;
+    }
+
+    if (
+      !movieId ||
+      !cinemaName ||
+      !showDate ||
+      !showTime
+    ) {
+      Alert.alert(
+        'Thông báo',
+        'Thông tin suất chiếu không hợp lệ.'
+      );
+      return;
+    }
+
+    const availableSeats = new Set();
+
+    seatLayout.rows.forEach((row) => {
+      (row.seats || []).forEach((seat) => {
+        if (seat.status !== 'booked') {
+          availableSeats.add(seat.id);
+        }
+      });
+    });
+
+    if (
+      selectedSeats.some(
+        (seatId) => !availableSeats.has(seatId)
+      )
+    ) {
+      Alert.alert(
+        'Ghế không hợp lệ',
+        'Một số ghế không còn khả dụng. Vui lòng chọn lại.'
+      );
+      return;
+    }
+
+    if (
+      !Number.isFinite(totalPrice) ||
+      totalPrice <= 0
+    ) {
+      Alert.alert(
+        'Thông báo',
+        'Giá vé không hợp lệ.'
+      );
+      return;
+    }
+
+    const bookingSummary = {
+  ...bookingData,
+  movieId,
+  movieTitle,
+  cinemaName,
+  room: roomName,
+  date: showDate,
+  time: showTime,
+
+  // Danh sách ghế, tương thích cả hai cách đọc
+  seats: [...selectedSeats],
+  selectedSeats: [...selectedSeats],
+
+  // Tổng tiền vé, tương thích với Checkout
+  ticketPrice: totalPrice,
+  seatTotal: totalPrice,
+};
+
+    if (typeof onContinue === 'function') {
+      onContinue(bookingSummary);
+    } else {
+      Alert.alert(
+        'Lỗi điều hướng',
+        'Chưa kết nối được màn hình Combo.'
+      );
     }
   };
 
-  const handleConfirmBooking = async (token = holdToken) => {
-    try {
-      setSubmitting(true);
-      const response = await createBooking({
-        userId: user?._id || user?.id,
-        movieTitle,
-        cinemaName,
-        room: roomName,
-        date: showDate,
-        time: showTime,
-        seats: selectedSeats,
-        seatTotal: totalPrice,
-        totalPrice,
-        holdToken: token,
-      });
-
-      Alert.alert(
-        'Đặt vé thành công! 🎉',
-        `Mã vé: ${response.data?.bookingCode || 'CN-886912'}\nPhim: ${movieTitle}\nSuất: ${showTime} - ${showDate}\nGhế: ${selectedSeats.join(', ')}\nTổng tiền: ${totalPrice.toLocaleString('vi-VN')}đ`,
-        [{ text: 'Về trang chủ', onPress: () => onComplete && onComplete() }]
-      );
-    } catch (err) {
-      Alert.alert('Lỗi đặt vé', err.message || 'Không thể kết nối đến máy chủ.');
-    } finally {
-      setSubmitting(false);
+  const getSeatColor = (seat, row, isSelected) => {
+    if (seat.status === 'booked') {
+      return '#18181B';
     }
+
+    if (isSelected) {
+      return '#E50914';
+    }
+
+    if (row.type === 'vip') {
+      return '#EAB308';
+    }
+
+    if (row.type === 'sweetbox') {
+      return '#881337';
+    }
+
+    return '#3F3F46';
   };
+
+  const canContinue =
+    !loading &&
+    !loadError &&
+    selectedSeats.length > 0 &&
+    totalPrice > 0;
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#0B0B0B" />
+      <StatusBar
+        barStyle="light-content"
+        backgroundColor="#0B0B0B"
+      />
 
-      {/* Top Bar đúng mẫu ảnh */}
+      {/* Thanh tiêu đề */}
       <View style={styles.topBar}>
-        <TouchableOpacity style={styles.circularBackBtn} onPress={onBack} activeOpacity={0.7}>
-          <Text style={styles.backChevron}>❮</Text>
-        </TouchableOpacity>
-        <Text style={styles.topBarTitle}>Chọn ghế</Text>
-      </View>
-
-      {/* Breadcrumb Steps: Phim | Rạp | Suất | Ghế (Active) | Combo | Trả tiền | Vé QR */}
-      <View style={styles.breadcrumbBar}>
-        <View style={styles.stepItem}>
-          <Text style={styles.stepText}>Phim</Text>
-        </View>
-        <View style={styles.stepItem}>
-          <Text style={styles.stepText}>Rạp</Text>
-        </View>
-        <View style={styles.stepItem}>
-          <Text style={styles.stepText}>Suất</Text>
-        </View>
-        <View style={styles.stepItem}>
-          <Text style={[styles.stepText, styles.stepActive]}>Ghế</Text>
-          <View style={styles.activeUnderline} />
-        </View>
-        <View style={styles.stepItem}>
-          <Text style={styles.stepText}>Combo</Text>
-        </View>
-        <View style={styles.stepItem}>
-          <Text style={styles.stepText}>Trả tiền</Text>
-        </View>
-        <View style={styles.stepItem}>
-          <Text style={styles.stepText}>Vé QR</Text>
-        </View>
-      </View>
-
-      {remainingSeconds !== null && remainingSeconds > 0 && (
-        <View style={styles.holdTimerBanner}>
-          <Text style={styles.holdTimerTitle}>ĐANG GIỮ GHẾ TẠM THỜI</Text>
-          <Text style={styles.holdTimerSubtitle}>
-            Ghế sẽ tự giải phóng sau{' '}
-            <Text style={styles.holdTimerHighlight}>
-              {String(Math.floor(remainingSeconds / 60)).padStart(2, '0')}:
-              {String(remainingSeconds % 60).padStart(2, '0')}
-            </Text>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={onBack}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.backArrow}>❮</Text>
+          <Text style={styles.topBarTitle}>
+            Chọn ghế
           </Text>
-        </View>
-      )}
+        </TouchableOpacity>
+      </View>
+
+      {/* Các bước đặt vé */}
+      <View style={styles.breadcrumbContainer}>
+        {[
+          'Phim',
+          'Suất',
+          'Ghế',
+          'Combo',
+          'Trả tiền',
+          'Vé QR',
+        ].map((step) => (
+          <View
+            key={step}
+            style={styles.stepItem}
+          >
+            <Text
+              style={[
+                styles.stepText,
+                step === 'Ghế' && styles.stepActive,
+              ]}
+            >
+              {step}
+            </Text>
+
+            {step === 'Ghế' && (
+              <View
+                style={styles.stepIndicatorActive}
+              />
+            )}
+          </View>
+        ))}
+      </View>
 
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Screening Summary Box đúng ảnh: Tên phim, Rạp phòng (trái) - Giờ, ngày (phải đỏ) */}
-        <View style={styles.summaryBox}>
+        {/* Thông tin suất chiếu */}
+        <View style={styles.summaryBar}>
           <View style={styles.summaryLeft}>
-            <Text style={styles.summaryMovieTitle}>{movieTitle}</Text>
+            <Text style={styles.summaryMovieTitle}>
+              {movieTitle}
+            </Text>
+
             <Text style={styles.summaryRoom}>
-              {cinemaName.replace('CineNow ', '')} • {roomName.replace('2D PHỤ ĐỀ • ', '')}
+              {roomName || cinemaName}
             </Text>
           </View>
+
           <View style={styles.summaryRight}>
-            <Text style={styles.summaryTime}>{showTime}</Text>
-            <Text style={styles.summaryDate}>{showDate}</Text>
+            <Text style={styles.summaryTime}>
+              {showTime || '--:--'}
+            </Text>
+
+            <Text style={styles.summaryDate}>
+              {showDate || 'Chưa chọn ngày'}
+            </Text>
           </View>
         </View>
 
-        {/* Curved Screen Banner (Màn hình cong phát sáng) */}
+        {/* Màn hình chiếu */}
         <View style={styles.screenContainer}>
           <View style={styles.screenCurve} />
-          <Text style={styles.screenLabel}>MÀN HÌNH</Text>
+
+          <Text style={styles.screenLabel}>
+            MÀN HÌNH
+          </Text>
         </View>
 
+        {/* Sơ đồ ghế */}
         {loading ? (
           <View style={styles.loadingBox}>
-            <ActivityIndicator size="small" color="#E50914" />
+            <ActivityIndicator
+              size="large"
+              color="#E50914"
+            />
+
+            <Text style={styles.loadingText}>
+              Đang tải sơ đồ ghế...
+            </Text>
+          </View>
+        ) : loadError ? (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorText}>
+              {loadError}
+            </Text>
+
+            <TouchableOpacity
+              style={styles.errorButton}
+              onPress={onBack}
+            >
+              <Text style={styles.errorButtonText}>
+                Quay lại chọn suất
+              </Text>
+            </TouchableOpacity>
           </View>
         ) : (
-          /* Sơ đồ ghế 6 hàng (A, B, C, D, E, F) đúng từng màu như ảnh mẫu */
           <View style={styles.seatMatrix}>
-            {(seatLayout?.rows || []).map((row) => (
-              <View key={row.row} style={styles.rowContainer}>
-                {/* Row Label (A, B, C, D, E, F) */}
-                <Text style={styles.rowLabel}>{row.row}</Text>
+            {(seatLayout?.rows || []).map(
+              (row, rowIndex) => (
+                <View
+                  key={`${row.row}-${rowIndex}`}
+                  style={styles.rowContainer}
+                >
+                  <Text style={styles.rowLabel}>
+                    {row.row}
+                  </Text>
 
-                {/* Danh sách ghế */}
-                <View style={styles.seatsRow}>
-                  {row.seats.map((seat) => {
-                    const isSelected = selectedSeats.includes(seat.id);
-                    const isBooked = seat.status === 'booked';
-                    const isOtherHolding =
-                      seat.status === 'holding' && !seat.isMine && !isSelected;
+                  <View style={styles.seatsRow}>
+                    {(row.seats || []).map((seat) => {
+                      const isBooked =
+                        seat.status === 'booked';
 
-                    // Ghế đôi Sweetbox (Row F)
-                    if (seat.isDouble) {
+                      const isSelected =
+                        !isBooked &&
+                        selectedSeats.includes(seat.id);
+
+                      const bgColor = getSeatColor(
+                        seat,
+                        row,
+                        isSelected
+                      );
+
+                      if (seat.isDouble) {
+                        return (
+                          <TouchableOpacity
+                            key={seat.id}
+                            style={[
+                              styles.doubleSeat,
+                              {
+                                backgroundColor: bgColor,
+                              },
+                              isSelected &&
+                                styles.seatBorderSelected,
+                            ]}
+                            disabled={isBooked}
+                            onPress={() =>
+                              handleToggleSeat(seat)
+                            }
+                            activeOpacity={0.8}
+                          >
+                            <Text
+                              style={[
+                                styles.seatNumberText,
+                                isSelected &&
+                                  styles.seatNumberTextWhite,
+                              ]}
+                            >
+                              {seat.number}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      }
+
                       return (
                         <TouchableOpacity
                           key={seat.id}
                           style={[
-                            styles.doubleSeat,
-                            isBooked && styles.seatBooked,
-                            isOtherHolding && styles.seatHolding,
-                            isSelected && styles.seatSelected,
+                            styles.singleSeat,
+                            {
+                              backgroundColor: bgColor,
+                            },
+                            isSelected &&
+                              styles.seatBorderSelected,
                           ]}
                           disabled={isBooked}
-                          onPress={() => handleToggleSeat(seat, row)}
+                          onPress={() =>
+                            handleToggleSeat(seat)
+                          }
                           activeOpacity={0.8}
                         >
-                          <Text style={styles.doubleSeatText}>{seat.number}</Text>
+                          {isSelected && (
+                            <Text style={styles.checkIcon}>
+                              ✓
+                            </Text>
+                          )}
                         </TouchableOpacity>
                       );
-                    }
-
-                    // Ghế đơn (Rows A, B, C, D, E)
-                    return (
-                      <TouchableOpacity
-                        key={seat.id}
-                        style={[
-                          styles.singleSeat,
-                          row.type === 'standard' && styles.seatStandard,
-                          row.type === 'vip' && styles.seatVip,
-                          isBooked && styles.seatBooked,
-                          isOtherHolding && styles.seatHolding,
-                          isSelected && styles.seatSelected,
-                        ]}
-                        disabled={isBooked}
-                        onPress={() => handleToggleSeat(seat, row)}
-                        activeOpacity={0.8}
-                      />
-                    );
-                  })}
+                    })}
+                  </View>
                 </View>
-              </View>
-            ))}
+              )
+            )}
           </View>
         )}
 
-        {/* Legend (Chú thích 5 mục đúng ảnh) */}
+        {/* Chú thích ghế */}
         <View style={styles.legendContainer}>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendBox, styles.legendStandard]} />
-            <Text style={styles.legendText}>Thường</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendBox, styles.legendVip]} />
-            <Text style={styles.legendText}>VIP</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendBox, styles.legendSweetbox]} />
-            <Text style={styles.legendText}>Ghế đôi</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendBox, styles.legendBooked]} />
-            <Text style={styles.legendText}>Đã đặt</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendBox, styles.seatHolding]} />
-            <Text style={styles.legendText}>Đang giữ</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendBox, styles.legendSelected]} />
-            <Text style={styles.legendText}>Đang chọn</Text>
+          {[
+            {
+              label: 'Thường',
+              color: '#3F3F46',
+            },
+            {
+              label: 'VIP',
+              color: '#EAB308',
+            },
+            {
+              label: 'Ghế đôi',
+              color: '#881337',
+            },
+            {
+              label: 'Đã đặt',
+              color: '#18181B',
+            },
+            {
+              label: 'Đang chọn',
+              color: '#E50914',
+            },
+          ].map((item) => (
+            <View
+              key={item.label}
+              style={styles.legendItem}
+            >
+              <View
+                style={[
+                  styles.legendBox,
+                  {
+                    backgroundColor: item.color,
+                  },
+                ]}
+              />
+
+              <Text style={styles.legendText}>
+                {item.label}
+              </Text>
+            </View>
+          ))}
+        </View>
+
+        {/* Ghế đã chọn */}
+        <View style={styles.selectedSeatsBanner}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.selectedSeatsLabel}>
+              Ghế đang chọn - {selectedSeats.length} ghế
+            </Text>
+
+            <Text style={styles.selectedSeatsList}>
+              {selectedSeats.length > 0
+                ? selectedSeats.join(', ')
+                : 'Chưa chọn ghế'}
+            </Text>
           </View>
         </View>
 
-        {/* Banner Ghế đang chọn */}
-        <View style={styles.selectedSeatsCard}>
-          <Text style={styles.selectedSeatsLabel}>
-            Ghế đang chọn • {selectedSeats.length} ghế
-          </Text>
-          <Text style={styles.selectedSeatsValue}>
-            {selectedSeats.length > 0 ? selectedSeats.join(', ') : 'Chưa chọn'}
-          </Text>
-        </View>
-
-        <View style={{ height: 130 }} />
+        <View style={{ height: 110 }} />
       </ScrollView>
 
-      {/* Bottom Bar: Tổng tiền (380.000đ) & Nút Tiếp tục */}
+      {/* Thanh tổng tiền */}
       <View style={styles.bottomBar}>
-        <View style={styles.totalRow}>
-          <Text style={styles.totalLabel}>Tổng tiền</Text>
+        <View style={styles.totalBlock}>
+          <Text style={styles.totalLabel}>
+            Tổng tiền vé
+          </Text>
+
           <Text style={styles.totalAmount}>
             {totalPrice.toLocaleString('vi-VN')}đ
           </Text>
         </View>
 
         <TouchableOpacity
-          style={styles.continueBtn}
+          style={[
+            styles.payButton,
+            !canContinue && styles.payButtonDisabled,
+          ]}
+          disabled={!canContinue}
           activeOpacity={0.85}
-          disabled={submitting}
-          onPress={handleProceed}
+          onPress={handleConfirmBooking}
         >
-          {submitting ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text style={styles.continueBtnText}>Tiếp tục</Text>
-          )}
+          <Text style={styles.payButtonText}>
+            Tiếp tục
+          </Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -535,304 +574,340 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0B0B0B',
   },
+
   topBar: {
     paddingTop: 45,
-    paddingHorizontal: 16,
-    paddingBottom: 14,
+    paddingHorizontal: 20,
+    paddingBottom: 12,
     backgroundColor: '#0B0B0B',
+  },
+
+  backButton: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  circularBackBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#1E1E1E',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 14,
-  },
-  backChevron: {
+
+  backArrow: {
     color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: 'bold',
+    fontSize: 18,
+    marginRight: 8,
   },
+
   topBarTitle: {
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: 'bold',
   },
-  breadcrumbBar: {
+
+  breadcrumbContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#1A1A1A',
+    borderBottomColor: '#18181B',
   },
+
   stepItem: {
     alignItems: 'center',
-    position: 'relative',
-    paddingBottom: 4,
   },
+
   stepText: {
-    color: '#555555',
-    fontSize: 11,
+    color: '#71717A',
+    fontSize: 12,
     fontWeight: '600',
   },
+
   stepActive: {
-    color: '#FFFFFF',
+    color: '#E50914',
     fontWeight: 'bold',
   },
-  activeUnderline: {
-    position: 'absolute',
-    bottom: -6,
+
+  stepIndicatorActive: {
     height: 2,
     width: '100%',
     backgroundColor: '#E50914',
+    marginTop: 4,
     borderRadius: 1,
   },
+
   scrollView: {
     flex: 1,
   },
+
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 16,
   },
-  summaryBox: {
+
+  summaryBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 26,
+    backgroundColor: '#18181B',
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#27272A',
   },
+
   summaryLeft: {
     flex: 1,
   },
+
   summaryMovieTitle: {
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: 'bold',
     marginBottom: 2,
   },
+
   summaryRoom: {
-    color: '#777777',
+    color: '#71717A',
     fontSize: 12,
   },
+
   summaryRight: {
     alignItems: 'flex-end',
   },
+
   summaryTime: {
     color: '#E50914',
     fontSize: 15,
     fontWeight: 'bold',
     marginBottom: 2,
   },
+
   summaryDate: {
-    color: '#777777',
+    color: '#71717A',
     fontSize: 12,
   },
+
   screenContainer: {
     alignItems: 'center',
-    marginBottom: 28,
+    marginBottom: 24,
   },
+
   screenCurve: {
-    width: '80%',
-    height: 4,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 4,
+    width: '88%',
+    height: 5,
+    backgroundColor: '#E4E4E7',
+    borderRadius: 5,
     shadowColor: '#FFFFFF',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
     shadowOpacity: 0.8,
     shadowRadius: 6,
     elevation: 4,
     marginBottom: 8,
   },
+
   screenLabel: {
-    color: '#666666',
-    fontSize: 10,
+    color: '#71717A',
+    fontSize: 11,
     letterSpacing: 2,
-    fontWeight: 'bold',
+    fontWeight: '600',
   },
+
   loadingBox: {
-    paddingVertical: 30,
+    paddingVertical: 40,
     alignItems: 'center',
   },
-  holdTimerBanner: {
-    backgroundColor: '#2A1D08',
-    borderColor: '#8A5A10',
-    borderWidth: 1,
+
+  loadingText: {
+    color: '#71717A',
+    marginTop: 10,
+  },
+
+  errorBox: {
+    backgroundColor: '#18181B',
+    padding: 20,
+    borderRadius: 14,
+    marginBottom: 20,
+    alignItems: 'center',
+  },
+
+  errorText: {
+    color: '#FF6B72',
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+
+  errorButton: {
+    marginTop: 16,
+    backgroundColor: '#E50914',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
     borderRadius: 10,
-    marginHorizontal: 16,
-    marginTop: 12,
-    padding: 12,
   },
-  holdTimerTitle: {
-    color: '#FBBF24',
-    fontSize: 12,
+
+  errorButtonText: {
+    color: '#FFFFFF',
     fontWeight: 'bold',
   },
-  holdTimerSubtitle: {
-    color: '#D4D4D8',
-    fontSize: 12,
-    marginTop: 4,
-  },
-  holdTimerHighlight: {
-    color: '#FBBF24',
-    fontWeight: 'bold',
-  },
+
   seatMatrix: {
     alignItems: 'center',
-    gap: 9,
-    marginBottom: 26,
+    gap: 8,
+    marginBottom: 24,
   },
+
   rowContainer: {
     flexDirection: 'row',
     alignItems: 'center',
   },
+
   rowLabel: {
-    color: '#777777',
-    fontSize: 11,
+    color: '#71717A',
+    fontSize: 12,
     fontWeight: 'bold',
     width: 20,
     textAlign: 'center',
-    marginRight: 6,
   },
+
   seatsRow: {
     flexDirection: 'row',
-    gap: 7,
+    gap: 6,
   },
+
   singleSeat: {
-    width: 28,
-    height: 26,
-    borderRadius: 6,
-  },
-  doubleSeat: {
-    width: 63,
-    height: 26,
-    borderRadius: 6,
-    backgroundColor: '#B91C1C',
+    width: 32,
+    height: 30,
+    borderRadius: 7,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  doubleSeatText: {
+
+  doubleSeat: {
+    width: 70,
+    height: 30,
+    borderRadius: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  seatBorderSelected: {
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+
+  seatNumberText: {
+    color: '#A1A1AA',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+
+  seatNumberTextWhite: {
     color: '#FFFFFF',
-    fontSize: 9,
     fontWeight: 'bold',
   },
-  seatStandard: {
-    backgroundColor: 'transparent',
-    borderWidth: 1.5,
-    borderColor: '#4A4A50',
+
+  checkIcon: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
-  seatVip: {
-    backgroundColor: '#EAB308',
-  },
-  seatBooked: {
-    backgroundColor: '#353538',
-    borderColor: '#353538',
-  },
-  seatHolding: {
-    backgroundColor: '#F59E0B',
-    borderColor: '#F59E0B',
-  },
-  seatSelected: {
-    backgroundColor: '#E50914',
-    borderColor: '#E50914',
-  },
+
   legendContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 14,
-    marginBottom: 24,
+    marginBottom: 20,
+    paddingVertical: 10,
   },
+
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
   },
+
   legendBox: {
     width: 14,
     height: 14,
-    borderRadius: 3,
+    borderRadius: 4,
     marginRight: 6,
   },
-  legendStandard: {
-    backgroundColor: 'transparent',
-    borderWidth: 1.5,
-    borderColor: '#4A4A50',
-  },
-  legendVip: {
-    backgroundColor: '#EAB308',
-  },
-  legendSweetbox: {
-    backgroundColor: '#B91C1C',
-    width: 22,
-  },
-  legendBooked: {
-    backgroundColor: '#353538',
-  },
-  legendSelected: {
-    backgroundColor: '#E50914',
-  },
+
   legendText: {
-    color: '#777777',
-    fontSize: 10,
+    color: '#71717A',
+    fontSize: 11,
   },
-  selectedSeatsCard: {
-    backgroundColor: '#141414',
-    borderRadius: 12,
+
+  selectedSeatsBanner: {
+    backgroundColor: '#18181B',
+    borderRadius: 14,
     padding: 14,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#202020',
+    borderColor: '#27272A',
   },
+
   selectedSeatsLabel: {
-    color: '#777777',
+    color: '#71717A',
     fontSize: 13,
+    marginBottom: 5,
   },
-  selectedSeatsValue: {
+
+  selectedSeatsList: {
     color: '#FFFFFF',
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: 'bold',
   },
+
   bottomBar: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#101010',
+    backgroundColor: '#121214',
     borderTopWidth: 1,
-    borderTopColor: '#1E1E1E',
-    paddingHorizontal: 16,
+    borderTopColor: '#27272A',
+    paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 24,
-  },
-  totalRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    justifyContent: 'space-between',
   },
+
+  totalBlock: {
+    justifyContent: 'center',
+  },
+
   totalLabel: {
-    color: '#777777',
-    fontSize: 13,
+    color: '#71717A',
+    fontSize: 12,
   },
+
   totalAmount: {
     color: '#E50914',
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: '900',
   },
-  continueBtn: {
+
+  payButton: {
     backgroundColor: '#E50914',
-    borderRadius: 12,
+    paddingHorizontal: 36,
     paddingVertical: 14,
+    borderRadius: 14,
+    minWidth: 130,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  continueBtnText: {
+
+  payButtonDisabled: {
+    opacity: 0.45,
+  },
+
+  payButtonText: {
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: 'bold',

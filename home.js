@@ -21,7 +21,7 @@ export default function HomeScreen({
   onLogout,
 }) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState('home');
+
   const [showAccountModal, setShowAccountModal] = useState(false);
 
   // Dynamic server data states
@@ -62,12 +62,6 @@ export default function HomeScreen({
     loadData();
   };
 
-  const handleTabPress = (tabName) => {
-    setActiveTab(tabName);
-    if (tabName === 'account') {
-      setShowAccountModal(true);
-    }
-  };
 
   const featuredMovie = homeData.featuredMovie || homeData.nowShowing?.[0];
 
@@ -146,7 +140,7 @@ export default function HomeScreen({
                 onPress={() => onSelectMovie(featuredMovie)}
               >
                 <Image
-                  source={{ uri: featuredMovie.backdrop || featuredMovie.poster }}
+                  source={{ uri: featuredMovie.bannerUrl || featuredMovie.posterUrl }}
                   style={styles.featuredImage}
                   resizeMode="cover"
                 />
@@ -173,7 +167,7 @@ export default function HomeScreen({
                     {featuredMovie.title.toUpperCase()}
                   </Text>
                   <Text style={styles.featuredMeta}>
-                    {featuredMovie.genre?.split('•')[0]?.trim()} •{' '}
+                    {featuredMovie.genres?.[0] || ''} •{' '}
                     {featuredMovie.duration} •{' '}
                     <Text style={styles.starText}>⭐ {featuredMovie.rating}</Text>
                   </Text>
@@ -216,7 +210,7 @@ export default function HomeScreen({
                 >
                   <View style={styles.posterContainer}>
                     <Image
-                      source={{ uri: movie.poster }}
+                      source={{ uri: movie.posterUrl }}
                       style={styles.moviePoster}
                       resizeMode="cover"
                     />
@@ -249,7 +243,7 @@ export default function HomeScreen({
                 style={styles.upcomingCard}
               >
                 <Image
-                  source={{ uri: movie.poster }}
+                  source={{ uri: movie.posterUrl }}
                   style={styles.upcomingPoster}
                   resizeMode="cover"
                 />
@@ -301,98 +295,6 @@ export default function HomeScreen({
 
         <View style={{ height: 100 }} />
       </ScrollView>
-
-      {/* Bottom Navigation Bar */}
-      <View style={styles.bottomNav}>
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => handleTabPress('home')}
-          activeOpacity={0.8}
-        >
-          <Text
-            style={[styles.navIcon, activeTab === 'home' && styles.navIconActive]}
-          >
-            🏠
-          </Text>
-          <Text
-            style={[
-              styles.navLabel,
-              activeTab === 'home' && styles.navLabelActive,
-            ]}
-          >
-            Trang chủ
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => handleTabPress('movies')}
-          activeOpacity={0.8}
-        >
-          <Text
-            style={[
-              styles.navIcon,
-              activeTab === 'movies' && styles.navIconActive,
-            ]}
-          >
-            🎬
-          </Text>
-          <Text
-            style={[
-              styles.navLabel,
-              activeTab === 'movies' && styles.navLabelActive,
-            ]}
-          >
-            Phim
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => handleTabPress('tickets')}
-          activeOpacity={0.8}
-        >
-          <Text
-            style={[
-              styles.navIcon,
-              activeTab === 'tickets' && styles.navIconActive,
-            ]}
-          >
-            🎟️
-          </Text>
-          <Text
-            style={[
-              styles.navLabel,
-              activeTab === 'tickets' && styles.navLabelActive,
-            ]}
-          >
-            Vé của tôi
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => handleTabPress('account')}
-          activeOpacity={0.8}
-        >
-          <Text
-            style={[
-              styles.navIcon,
-              activeTab === 'account' && styles.navIconActive,
-            ]}
-          >
-            👤
-          </Text>
-          <Text
-            style={[
-              styles.navLabel,
-              activeTab === 'account' && styles.navLabelActive,
-            ]}
-          >
-            Tài khoản
-          </Text>
-        </TouchableOpacity>
-      </View>
 
       {/* Modal Profile / Logout */}
       <Modal

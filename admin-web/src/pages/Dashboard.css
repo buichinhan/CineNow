@@ -1,0 +1,393 @@
+
+.dash-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  color: #f5f5f5;
+}
+
+.dash-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  padding: 28px;
+  border: 1px solid #333;
+  border-radius: 18px;
+  background: linear-gradient(115deg, #281014, #171717 65%);
+}
+
+.dash-eyebrow {
+  color: #ff5b65;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 2px;
+}
+
+.dash-hero h2 {
+  margin: 10px 0;
+  font-size: 27px;
+  font-weight: 800;
+}
+
+.dash-hero p,
+.dash-panel-heading p,
+.dash-stat-card p {
+  color: #9b9b9b;
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.dash-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 11px 17px;
+  background: #e50914;
+  color: #fff;
+  border: 0;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.dash-refresh:disabled {
+  opacity: .65;
+  cursor: not-allowed;
+}
+
+.dash-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.dash-stat-card,
+.dash-panel {
+  background: #1b1b1b;
+  border: 1px solid #303030;
+  border-radius: 15px;
+  min-width: 0;
+}
+
+.dash-stat-card {
+  padding: 21px;
+}
+
+.dash-stat-heading,
+.dash-panel-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.dash-stat-heading span {
+  color: #aaa;
+  font-size: 13px;
+}
+
+.dash-stat-icon,
+.dash-list-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 39px;
+  height: 39px;
+  color: #ff424d;
+  background: rgba(229, 9, 20, .12);
+  border-radius: 11px;
+}
+
+.dash-stat-card h2 {
+  margin: 16px 0 6px;
+  font-size: clamp(20px, 2vw, 29px);
+  overflow-wrap: anywhere;
+}
+
+.dash-content-grid {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr;
+  gap: 18px;
+}
+
+.dash-panel {
+  padding: 23px;
+}
+
+.dash-panel-heading {
+  margin-bottom: 22px;
+}
+
+.dash-panel-heading h3 {
+  margin: 0 0 5px;
+  font-size: 17px;
+}
+
+.dash-panel-heading > svg {
+  color: #e50914;
+  flex-shrink: 0;
+}
+
+.dash-chart-total {
+  font-size: 25px;
+  font-weight: 800;
+  margin-bottom: 20px;
+}
+
+.dash-chart {
+  height: 220px;
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #444;
+}
+
+.dash-chart-column {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.dash-chart-bar-area {
+  width: 100%;
+  height: 180px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+}
+
+.dash-chart-bar {
+  width: min(100%, 43px);
+  min-height: 3px;
+  background: linear-gradient(180deg, #ff4a55, #c4000b);
+  border-radius: 7px 7px 0 0;
+  transition: height .3s ease;
+}
+
+.dash-chart-column span {
+  color: #aaa;
+  font-size: 11px;
+  padding-bottom: 8px;
+}
+
+.dash-chart-note {
+  color: #888;
+  font-size: 11px;
+  margin: 15px 0 0;
+}
+
+.dash-item-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.dash-list-item {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 13px 0;
+  border-bottom: 1px solid #303030;
+}
+
+.dash-list-content {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.dash-list-content strong {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.dash-list-content span,
+.dash-list-content small {
+  color: #999;
+  font-size: 12px;
+}
+
+.dash-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  color: #ff5660;
+  border: 0;
+  padding: 16px 0 0;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.dash-link:hover {
+  color: #fff;
+}
+
+.dash-table-scroll {
+  overflow-x: auto;
+}
+
+.dash-table {
+  width: 100%;
+  min-width: 750px;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.dash-table th {
+  color: #999;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 13px 12px;
+  border-bottom: 1px solid #383838;
+}
+
+.dash-table td {
+  padding: 16px 12px;
+  font-size: 13px;
+  border-bottom: 1px solid #292929;
+}
+
+.dash-code,
+.dash-price {
+  font-weight: 700;
+}
+
+.dash-status {
+  display: inline-block;
+  padding: 6px 9px;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.dash-status.paid {
+  color: #60d394;
+  background: rgba(40, 167, 100, .13);
+}
+
+.dash-status.cancelled {
+  color: #ff7373;
+  background: rgba(220, 40, 40, .14);
+}
+
+.dash-status.pending {
+  color: #ffc46b;
+  background: rgba(255, 180, 40, .13);
+}
+
+.dash-status.refunded {
+  color: #91baff;
+  background: rgba(60, 120, 255, .14);
+}
+
+.dash-error {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #371719;
+  border: 1px solid #9c3339;
+  border-radius: 10px;
+  padding: 15px;
+  color: #ffb6bb;
+}
+
+.dash-error button {
+  margin-left: auto;
+  color: white;
+  background: #a52028;
+  border: 0;
+  border-radius: 7px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.dash-loading,
+.dash-empty {
+  padding: 30px;
+  color: #999;
+  text-align: center;
+}
+
+.dash-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+}
+
+.dash-footer {
+  text-align: right;
+  font-size: 12px;
+  color: #888;
+}
+
+.dash-spin {
+  animation: dash-rotate 1s linear infinite;
+}
+
+@keyframes dash-rotate {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 1200px) {
+  .dash-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dash-content-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 650px) {
+  .dash-page {
+    gap: 15px;
+  }
+
+  .dash-hero {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 20px;
+  }
+
+  .dash-hero h2 {
+    font-size: 23px;
+  }
+
+  .dash-stats-grid {
+    gap: 10px;
+  }
+
+  .dash-stat-card {
+    padding: 14px;
+  }
+
+  .dash-stat-card h2 {
+    font-size: 19px;
+  }
+
+  .dash-panel {
+    padding: 16px;
+  }
+
+  .dash-chart {
+    gap: 5px;
+  }
+
+  .dash-error {
+    flex-wrap: wrap;
+  }
+}

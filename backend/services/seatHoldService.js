@@ -22,28 +22,37 @@ function getScreeningKey({ cinemaName = '', room = '', date = '', time = '' }) {
   return `${normCinema}__${normRoom}__${normDate}__${normTime}`;
 }
 
-/**
- * 2. Lấy hoặc khởi tạo sơ đồ ghế cho một suất chiếu cụ thể
- */
-function getOrCreateScreeningLayout(screeningKey, initialLayout, bookedSeatsList = []) {
+function getOrCreateScreeningLayout(
+  screeningKey,
+  initialLayout,
+  bookedSeatsList = null
+) {
   if (!screeningLayouts.has(screeningKey)) {
-    // Clone sâu từ initialLayout
     const layout = JSON.parse(JSON.stringify(initialLayout));
-
-    // Đánh dấu các ghế đã đặt trong CSDL (nếu có)
-    if (Array.isArray(bookedSeatsList) && bookedSeatsList.length > 0 && layout.rows) {
-      layout.rows.forEach((row) => {
-        row.seats.forEach((seat) => {
-          if (bookedSeatsList.includes(seat.id)) {
-            seat.status = 'booked';
-          }
-        });
-      });
-    }
-
     screeningLayouts.set(screeningKey, layout);
   }
-  return screeningLayouts.get(screeningKey);
+
+  const layout = screeningLayouts.get(screeningKey);
+
+  // Chỉ đồng bộ khi có danh sách ghế đã đặt được truyền vào.
+  // null nghĩa là không có dữ liệu mới để đồng bộ.
+  if (Array.isArray(bookedSeatsList) && layout?.rows) {
+    const bookedSet = new Set(bookedSeatsList);
+
+    layout.rows.forEach((row) => {
+      row.seats.forEach((seat) => {
+        if (bookedSet.has(seat.id)) {
+          seat.status = 'booked';
+          delete seat.heldByToken;
+          delete seat.holdExpiresAt;
+        } else if (seat.status === 'booked') {
+          seat.status = 'available';
+        }
+      });
+    });
+  }
+
+  return layout;
 }
 
 /**

@@ -1,14 +1,4 @@
-import { Platform } from 'react-native';
-
-// Tự động nhận diện môi trường:
-// - Khi chạy trên Web (trình duyệt máy tính): dùng localhost:3000
-// - Khi chạy trên Điện thoại (Expo Go): dùng IP mạng LAN 192.168.1.13
-export const SERVER_IP = '192.168.1.13';
-export const API_BASE_URL =
-  Platform.OS === 'web'
-    ? 'http://localhost:3000/api'
-    : `http://${SERVER_IP}:3000/api`;
-
+import { API_BASE_URL } from './apiConfig';
 /**
  * Gọi API lấy dữ liệu Trang Chủ
  */
@@ -138,6 +128,36 @@ export async function createBooking(bookingPayload) {
     throw error;
   }
 }
+/**
+ * Lấy danh sách vé của tài khoản đang đăng nhập.
+ */
+export async function getMyBookings(token) {
+  if (!token) {
+    throw new Error('Bạn cần đăng nhập để xem vé.');
+  }
+
+  const response = await fetch(`${API_BASE_URL}/bookings`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/json',
+    },
+  });
+
+  const result = await response.json();
+
+  if (!response.ok || !result.success) {
+    throw new Error(
+      result.message || 'Không thể tải lịch sử đặt vé.'
+    );
+  }
+
+  if (!Array.isArray(result.data)) {
+    throw new Error('Dữ liệu lịch sử vé không hợp lệ.');
+  }
+
+  return result.data;
+}
 
 // =========================================================================
 // QUẢN LÝ LỊCH CHIẾU VÀ KIỂM TRA XUNG ĐỘT (SHOWTIME MANAGEMENT & CONFLICT)
@@ -229,7 +249,6 @@ export async function deleteShowtimeApi(id) {
 }
 
 /**
- * Gọi API lấy danh sách lịch chiếu phục vụ quản lý (Management view)
  * @param {Object} filters { movieId, cinemaName, date, room, status }
  */
 export async function fetchShowtimesManagement(filters = {}) {
@@ -417,20 +436,38 @@ export async function fetchLoyaltyHistory(token) {
 /**
  * Hủy vé và xử lý hoàn điểm / hoàn voucher
  */
+/**
+ * Hủy vé và xử lý hoàn điểm / hoàn voucher
+ */
 export async function cancelBookingApi(bookingId, token = null) {
-  try {
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (!bookingId) {
+    throw new Error("Thiếu mã vé cần hủy.");
+  }
 
-    const res = await fetch(`${API_BASE_URL}/bookings/${bookingId}/cancel`, {
-      method: 'POST',
-      headers,
-    });
+  try {
+    const headers = { "Content-Type": "application/json" };
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const res = await fetch(
+      `${API_BASE_URL}/bookings/${encodeURIComponent(bookingId)}/cancel`,
+      {
+        method: "POST",
+        headers,
+      }
+    );
+
     const json = await res.json();
-    if (!res.ok) throw new Error(json.message || 'Không thể hủy vé');
+
+    if (!res.ok || !json.success) {
+      throw new Error(json.message || "Không thể hủy vé.");
+    }
+
     return json;
   } catch (error) {
-    console.warn('Lỗi hủy vé:', error.message);
+    console.warn("Lỗi hủy vé:", error.message);
     throw error;
   }
 }

@@ -6,8 +6,11 @@ const mongoose = require('mongoose');
 
 const Movie = require('./models/Movie');
 const Cinema = require('./models/Cinema');
+
 const Booking = require('./models/Booking');
+const SeatReservation = require('./models/SeatReservation');
 const User = require('./models/User');
+
 const Voucher = require('./models/Voucher');
 const UserVoucher = require('./models/UserVoucher');
 const PointTransaction = require('./models/PointTransaction');
@@ -218,40 +221,60 @@ app.get('/api/home', async (req, res) => {
 
 // ====================== SEATS & TEMPORARY HOLD API ======================
 
+
 async function getBookedSeatsForScreening({ cinemaName, room, date, time }) {
-  const booked = [];
-  if (mongoose.connection.readyState === 1) {
-    try {
-      const bookings = await Booking.find({
-        cinemaName,
-        date,
-        time,
-        status: 'confirmed',
-      }).lean();
-      bookings.forEach((b) => {
-        if (Array.isArray(b.seats)) booked.push(...b.seats);
-      });
-      return booked;
-    } catch (err) {
-      console.warn('Lỗi lấy danh sách ghế đã đặt từ DB:', err.message);
+  if (mongoose.connection.readyState !== 1) {
+    const error = new Error(
+      'MongoDB không khả dụng, không thể xác minh trạng thái ghế.'
+    );
+    error.statusCode = 503;
+    throw error;
+  }
+
+  const { getScreeningKey } = require('./services/seatHoldService');
+
+  const screeningKey = getScreeningKey({
+    cinemaName,
+    room,
+    date,
+    time,
+  });
+
+  // Giữ tương thích với các booking đã tồn tại.
+  const bookings = await Booking.find({
+    cinemaName,
+    room,
+    date,
+    time,
+    status: 'confirmed',
+  })
+    .select('seats')
+    .lean();
+
+  // Đọc những ghế đã được khóa bằng unique index.
+  const reservations = await SeatReservation.find({
+    screeningKey,
+  })
+    .select('seatId')
+    .lean();
+
+  const bookedSeats = new Set();
+
+  for (const booking of bookings) {
+    if (!Array.isArray(booking.seats)) continue;
+
+    for (const seat of booking.seats) {
+      bookedSeats.add(String(seat).trim());
     }
   }
 
-  // Fallback in-memory
-  memoryStore.bookings
-    .filter(
-      (b) =>
-        b.cinemaName === cinemaName &&
-        b.date === date &&
-        b.time === time &&
-        b.status === 'confirmed'
-    )
-    .forEach((b) => {
-      if (Array.isArray(b.seats)) booked.push(...b.seats);
-    });
+  for (const reservation of reservations) {
+    bookedSeats.add(String(reservation.seatId).trim());
+  }
 
-  return booked;
+  return [...bookedSeats];
 }
+
 
 /**
  * 1. GET /api/seats
@@ -452,7 +475,7 @@ app.get('/api/bookings', async (req, res) => {
       });
     }
 
-   const bookings = await Booking.find({
+const bookings = await Booking.find({
   userId: decoded.userId,
 })
   .sort({ createdAt: -1 })
@@ -506,10 +529,56 @@ return res.json({
     });
   }
 });
+
 app.post('/api/bookings', async (req, res) => {
   try {
+    // Không cho phép tạo vé khi MongoDB chưa sẵn sàng.
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: 'Hệ thống đặt vé tạm thời không khả dụng. Vui lòng thử lại sau.',
+      });
+    }
+
+    // Lấy userId từ token nếu có (bảo mật xác thực)
+
+    // Bắt buộc xác thực JWT trước khi tạo booking.
+    const authHeader = req.headers.authorization || '';
+
+    if (!authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({
+        success: false,
+        message: 'Vui lòng đăng nhập trước khi đặt vé.',
+      });
+    }
+
+    const token = authHeader.slice(7).trim();
+    let decoded;
+
+    try {
+      decoded = jwt.verify(
+        token,
+        process.env.JWT_SECRET || 'cinenow_secret_key_2026'
+      );
+    } catch (error) {
+      return res.status(401).json({
+        success: false,
+        message: 'Phiên đăng nhập không hợp lệ hoặc đã hết hạn.',
+      });
+    }
+
+    if (!decoded?.userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Token không chứa thông tin người dùng hợp lệ.',
+      });
+    }
+
+    const effectiveUserId = decoded.userId;
+
+    // Đọc dữ liệu đặt vé từ request.
+    // userId luôn lấy từ JWT, không lấy từ client.
     const {
-      userId,
       movieTitle,
       poster,
       cinemaName,
@@ -524,22 +593,8 @@ app.post('/api/bookings', async (req, res) => {
       pointsToUse = 0,
       paymentMethod,
       holdToken,
-    } = req.body;
+    } = req.body || {};
 
-    // Lấy userId từ token nếu có (bảo mật xác thực)
-    let effectiveUserId = userId;
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      try {
-        const token = authHeader.split(' ')[1];
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'cinenow_secret_key_2026');
-        if (decoded?.userId) {
-          effectiveUserId = decoded.userId;
-        }
-      } catch (e) {
-        // Token không hợp lệ bỏ qua nếu đã truyền userId
-      }
-    }
 
     if (
       !Array.isArray(seats) ||
@@ -548,45 +603,164 @@ app.post('/api/bookings', async (req, res) => {
     ) {
       return res.status(400).json({
         success: false,
-        message: 'Vui lòng chọn ít nhất 1 ghế.',
+        message: 'Vui lòng chọn ít nhất 1 ghế và cung cấp thông tin phim.',
       });
     }
 
-    // 1. Chuyển trạng thái ghế từ holding sang booked và giải phóng khóa giữ
-    confirmBookedSeats({
-      cinemaName: cinemaName || 'CineNow Landmark 81',
-      room: room || 'PHÒNG 03',
-      date: date || '16.10.2026',
-      time: time || '19:00',
-      seats,
-      holdToken,
-      initialLayout: INITIAL_SEAT_LAYOUT,
+    // Chuẩn hóa mã ghế trước khi kiểm tra và khóa trong MongoDB.
+    const normalizedSeats = seats.map((seat) =>
+      typeof seat === 'string' ? seat.trim().toUpperCase() : ''
+    );
+    if (
+  normalizedSeats.some(
+    (seat) => !/^[A-Z]+[1-9][0-9]*(?:-[1-9][0-9]*)?$/.test(seat)
+  )
+) {
+      return res.status(400).json({
+        success: false,
+        message: 'Danh sách ghế có mã không hợp lệ.',
+      });
+    }
+
+    if (new Set(normalizedSeats).size !== normalizedSeats.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Danh sách đặt vé chứa ghế bị trùng.',
+      });
+    }
+
+    // Kiểm tra ghế đã được đặt trong MongoDB,
+    // bao gồm cả các booking lịch sử chưa có SeatReservation.
+    if (!cinemaName || !room || !date || !time) {
+      return res.status(400).json({
+        success: false,
+        message: 'Thiếu thông tin rạp, phòng hoặc suất chiếu.',
+      });
+    }
+
+    const alreadyBookedSeats = await getBookedSeatsForScreening({
+      cinemaName,
+      room,
+      date,
+      time,
     });
 
-    // Cập nhật trạng thái ghế trong dữ liệu dự phòng.
-    const seatLayout = memoryStore.seatLayout;
-    if (seatLayout?.rows) {
-      seatLayout.rows.forEach((row) => {
-        row.seats.forEach((seat) => {
-          if (seats.includes(seat.id)) {
-            seat.status = 'booked';
-          }
-        });
+    const bookedSeatSet = new Set(
+      alreadyBookedSeats.map((seat) =>
+        String(seat).trim().toUpperCase()
+      )
+    );
+
+    const conflictingSeats = normalizedSeats.filter((seat) =>
+      bookedSeatSet.has(seat)
+    );
+
+    if (conflictingSeats.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: `Ghế ${conflictingSeats.join(', ')} đã có người đặt. Vui lòng chọn ghế khác.`,
+        conflictingSeats,
       });
     }
 
-    // 2. TÍNH TOÁN GIÁ TIỀN ĐỘC LẬP TRÊN BACKEND (BẢO MẬT KHÔNG TIN TƯỞNG CLIENT)
-    const calcConcessionsTotal = Array.isArray(concessions)
-      ? concessions.reduce(
-          (acc, item) => acc + (Number(item.price) || 0) * (Number(item.quantity) || 1),
-          0
-        )
-      : 0;
 
-    const finalConcessionsTotal =
-      concessionsTotal !== undefined ? Math.max(0, Number(concessionsTotal)) : calcConcessionsTotal;
-    const finalSeatTotal = Math.max(0, Number(seatTotal) || 0);
-    const subtotal = finalSeatTotal + finalConcessionsTotal;
+
+    // 2. TÍNH TOÁN GIÁ TIỀN ĐỘC LẬP TRÊN BACKEND (BẢO MẬT KHÔNG TIN TƯỞNG CLIENT)
+   // 2. BACKEND TU TINH GIA GHE VA COMBO
+
+// Tao bang gia ghe tu du lieu server
+const seatPriceMap = new Map();
+
+for (const row of INITIAL_SEAT_LAYOUT.rows) {
+  for (const seat of row.seats) {
+    seatPriceMap.set(
+      String(seat.id).toUpperCase(),
+      {
+        price: Number(row.price),
+        status: seat.status,
+      }
+    );
+  }
+}
+
+// Kiem tra va tinh gia tung ghe
+let finalSeatTotal = 0;
+
+for (const seatId of normalizedSeats) {
+  const seatInfo = seatPriceMap.get(seatId);
+
+  if (!seatInfo || !Number.isSafeInteger(seatInfo.price) || seatInfo.price <= 0) {
+    return res.status(400).json({
+      success: false,
+      message: `Ghe ${seatId} khong hop le hoac chua co gia.`,
+    });
+  }
+
+  if (seatInfo.status === 'booked') {
+    return res.status(409).json({
+      success: false,
+      message: `Ghe ${seatId} khong kha dung.`,
+    });
+  }
+
+  finalSeatTotal += seatInfo.price;
+}
+
+// Tao bang gia combo tu du lieu server
+const concessionMap = new Map(
+  INITIAL_CONCESSIONS.map((item) => [
+    String(item.id),
+    item,
+  ])
+);
+
+if (!Array.isArray(concessions)) {
+  return res.status(400).json({
+    success: false,
+    message: 'Danh sach bap nuoc khong hop le.',
+  });
+}
+
+let finalConcessionsTotal = 0;
+const verifiedConcessions = [];
+
+for (const item of concessions) {
+  const product = concessionMap.get(String(item.id));
+  const quantity = Number(item.quantity);
+
+  if (
+    !product ||
+    product.isAvailable === false ||
+    !Number.isSafeInteger(quantity) ||
+    quantity < 1 ||
+    quantity > 20 ||
+    !Number.isSafeInteger(Number(product.price)) ||
+    Number(product.price) < 0
+  ) {
+    return res.status(400).json({
+      success: false,
+      message: 'San pham hoac so luong khong hop le.',
+    });
+  }
+
+  finalConcessionsTotal += Number(product.price) * quantity;
+
+  verifiedConcessions.push({
+    id: product.id,
+    name: product.name,
+    price: Number(product.price),
+    quantity,
+  });
+}
+
+const subtotal = finalSeatTotal + finalConcessionsTotal;
+
+if (!Number.isSafeInteger(subtotal)) {
+  return res.status(400).json({
+    success: false,
+    message: 'Tong tien khong hop le.',
+  });
+}
 
     // 3. KIỂM TRA & TÍNH TOÁN VOUCHER TRÊN DATABASE
     let voucher = null;
@@ -741,10 +915,10 @@ app.post('/api/bookings', async (req, res) => {
       room: room || 'PHÒNG 03',
       date: date || '16.10.2026',
       time: time || '19:00',
-      seats,
+      seats: normalizedSeats,
       seatTotal: finalSeatTotal,
-      concessions: Array.isArray(concessions) ? concessions : [],
-      concessionsTotal: finalConcessionsTotal,
+concessions: verifiedConcessions,
+ concessionsTotal: finalConcessionsTotal,
       subtotal,
       voucherCode: voucher ? voucher.code : null,
       voucherId: voucher ? voucher._id : null,
@@ -761,65 +935,297 @@ app.post('/api/bookings', async (req, res) => {
       createdAt: new Date().toISOString(),
     };
 
+
+    // 6. LƯU BOOKING, KHÓA GHẾ, ĐIỂM VÀ VOUCHER TRONG TRANSACTION
     if (mongoose.connection.readyState === 1) {
-      // 6. LƯU ĐƠN VÀO MONGODB & CẬP NHẬT ĐIỂM / VOUCHER (ATOMIC)
-      const savedBooking = await Booking.create(newBookingData);
+      const { getScreeningKey } = require('./services/seatHoldService');
 
-      // Cập nhật trừ điểm đã dùng
-      if (pointsActuallyUsed > 0 && effectiveUserId) {
-        const updatedUser = await User.findByIdAndUpdate(
-          effectiveUserId,
-          { $inc: { loyaltyPoints: -pointsActuallyUsed } },
-          { new: true }
-        );
-
-        await PointTransaction.create({
-          userId: effectiveUserId,
-          bookingId: savedBooking._id,
-          bookingCode,
-          type: 'REDEEM',
-          points: -pointsActuallyUsed,
-          balanceAfter: updatedUser ? updatedUser.loyaltyPoints : 0,
-          description: `Sử dụng điểm cho đơn đặt vé ${bookingCode}`,
-        });
-      }
-
-      // Cập nhật cộng điểm tích lũy sau thanh toán thành công
-      if (pointsEarned > 0 && effectiveUserId) {
-        const updatedUser = await User.findByIdAndUpdate(
-          effectiveUserId,
-          { $inc: { loyaltyPoints: pointsEarned } },
-          { new: true }
-        );
-
-        await PointTransaction.create({
-          userId: effectiveUserId,
-          bookingId: savedBooking._id,
-          bookingCode,
-          type: 'EARN',
-          points: pointsEarned,
-          balanceAfter: updatedUser ? updatedUser.loyaltyPoints : pointsEarned,
-          description: `Tích lũy điểm từ đơn đặt vé ${bookingCode}`,
-        });
-      }
-
-      // Cập nhật lượt sử dụng voucher
-      if (voucher) {
-        await Voucher.findByIdAndUpdate(voucher._id, { $inc: { usedCount: 1 } });
-        if (effectiveUserId) {
-          await UserVoucher.findOneAndUpdate(
-            { userId: effectiveUserId, voucherId: voucher._id, status: 'AVAILABLE' },
-            { $set: { status: 'USED', usedAt: new Date(), orderId: bookingCode } }
-          );
-        }
-      }
-
-      return res.status(201).json({
-        success: true,
-        message: 'Đặt vé và thanh toán thành công!',
-        data: savedBooking,
+      const screeningKey = getScreeningKey({
+        cinemaName,
+        room,
+        date,
+        time,
       });
+
+      const session = await mongoose.startSession();
+      let savedBooking;
+
+      try {
+        await session.withTransaction(async () => {
+          // Không dùng dữ liệu mock khi thực hiện giao dịch thật.
+          const bookingId = new mongoose.Types.ObjectId();
+
+          // Kiểm tra cả booking lịch sử chưa có SeatReservation.
+          const legacyBookings = await Booking.find({
+            cinemaName,
+            room,
+            date,
+            time,
+            status: 'confirmed',
+          })
+            .select('seats')
+            .session(session)
+            .lean();
+
+          const requestedSeatSet = new Set(normalizedSeats);
+
+          const legacyConflict = legacyBookings.some((existing) =>
+            (existing.seats || []).some((seat) =>
+              requestedSeatSet.has(
+                String(seat).trim().toUpperCase()
+              )
+            )
+          );
+
+          if (legacyConflict) {
+            const error = new Error(
+              'Một hoặc nhiều ghế đã được đặt.'
+            );
+            error.statusCode = 409;
+            throw error;
+          }
+
+          // Unique index đảm bảo chỉ một booking sở hữu
+          // một ghế trong cùng suất chiếu.
+          await SeatReservation.insertMany(
+            normalizedSeats.map((seatId) => ({
+              screeningKey,
+              seatId,
+              bookingId,
+            })),
+            {
+              session,
+              ordered: true,
+            }
+          );
+
+          const bookingDocument = new Booking({
+            ...newBookingData,
+            _id: bookingId,
+          });
+
+          savedBooking = await bookingDocument.save({ session });
+
+          // Trừ điểm có điều kiện để không vượt số dư.
+          if (pointsActuallyUsed > 0) {
+            const updatedUser = await User.findOneAndUpdate(
+              {
+                _id: effectiveUserId,
+                loyaltyPoints: { $gte: pointsActuallyUsed },
+              },
+              {
+                $inc: {
+                  loyaltyPoints: -pointsActuallyUsed,
+                },
+              },
+              {
+                new: true,
+                session,
+              }
+            );
+
+            if (!updatedUser) {
+              const error = new Error(
+                'Số dư điểm không đủ để hoàn tất đặt vé.'
+              );
+              error.statusCode = 409;
+              throw error;
+            }
+
+            await PointTransaction.create(
+              [{
+                userId: effectiveUserId,
+                bookingId,
+                bookingCode,
+                type: 'REDEEM',
+                points: -pointsActuallyUsed,
+                balanceAfter: updatedUser.loyaltyPoints,
+                description:
+                  `Sử dụng điểm cho đơn đặt vé ${bookingCode}`,
+              }],
+              { session }
+            );
+          }
+// Cộng điểm sau khi lưu booking.
+// Ưu tiên thanh toán nợ điểm trước khi cộng vào số dư.
+if (pointsEarned > 0) {
+  if (!Number.isSafeInteger(pointsEarned) || pointsEarned < 0) {
+    throw new Error('Số điểm tích lũy không hợp lệ.');
+  }
+
+  const user = await User.findById(effectiveUserId)
+    .session(session);
+
+  if (!user) {
+    throw new Error(
+      'Không tìm thấy người dùng để tích điểm.'
+    );
+  }
+
+  const currentPoints = Number(user.loyaltyPoints);
+  const currentDebt = Number(user.loyaltyPointsDebt ?? 0);
+
+  if (
+    !Number.isSafeInteger(currentPoints) ||
+    !Number.isSafeInteger(currentDebt) ||
+    currentPoints < 0 ||
+    currentDebt < 0
+  ) {
+    throw new Error('Dữ liệu điểm của tài khoản không hợp lệ.');
+  }
+
+  // Số điểm thưởng được dùng để trả nợ.
+  const debtPaid = Math.min(pointsEarned, currentDebt);
+
+  // Số điểm thực sự cộng vào số dư.
+  const pointsAdded = pointsEarned - debtPaid;
+
+  const finalPoints = currentPoints + pointsAdded;
+  const finalDebt = currentDebt - debtPaid;
+
+  if (
+    !Number.isSafeInteger(finalPoints) ||
+    !Number.isSafeInteger(finalDebt)
+  ) {
+    throw new Error('Kết quả tính điểm vượt giới hạn an toàn.');
+  }
+
+  const updatedUser = await User.findOneAndUpdate(
+    {
+      _id: effectiveUserId,
+      loyaltyPoints: currentPoints,
+      loyaltyPointsDebt: currentDebt,
+    },
+    {
+      $set: {
+        loyaltyPoints: finalPoints,
+        loyaltyPointsDebt: finalDebt,
+      },
+    },
+    {
+      new: true,
+      runValidators: true,
+      session,
     }
+  );
+
+  if (!updatedUser) {
+    const error = new Error(
+      'Số dư điểm đã thay đổi. Vui lòng thử lại.'
+    );
+    error.statusCode = 409;
+    throw error;
+  }
+
+  await PointTransaction.create(
+    [{
+      userId: effectiveUserId,
+      bookingId,
+      bookingCode,
+      type: 'EARN',
+      points: pointsAdded,
+      balanceAfter: finalPoints,
+      description:
+        `Tích lũy ${pointsEarned} điểm từ đơn đặt vé ${bookingCode}. ` +
+        `Đã dùng ${debtPaid} điểm để thanh toán nợ.`,
+    }],
+    { session }
+  );
+}
+          if (voucher) {
+            // Giới hạn lượt dùng voucher ngay trong transaction.
+            const voucherFilter = {
+              _id: voucher._id,
+              isActive: true,
+              endDate: { $gte: new Date() },
+            };
+
+            if (voucher.totalLimit > 0) {
+              voucherFilter.usedCount = {
+                $lt: voucher.totalLimit,
+              };
+            }
+
+            const updatedVoucher = await Voucher.findOneAndUpdate(
+              voucherFilter,
+              {
+                $inc: { usedCount: 1 },
+              },
+              {
+                new: true,
+                session,
+              }
+            );
+
+            if (!updatedVoucher) {
+              const error = new Error(
+                'Voucher đã hết lượt hoặc không còn hiệu lực.'
+              );
+              error.statusCode = 409;
+              throw error;
+            }
+
+    const usedUserVoucher = await UserVoucher.findOneAndUpdate(
+  {
+    userId: effectiveUserId,
+    voucherId: voucher._id,
+    status: 'AVAILABLE',
+  },
+  {
+    $set: {
+      status: 'USED',
+      usedAt: new Date(),
+      orderId: bookingCode,
+    },
+  },
+  {
+    new: true,
+    runValidators: true,
+    session,
+  }
+);
+
+if (!usedUserVoucher) {
+  const error = new Error(
+    'Voucher không thuộc tài khoản hoặc đã được sử dụng.'
+  );
+  error.statusCode = 409;
+  throw error;
+}
+          }
+        }, {
+          readConcern: { level: 'snapshot' },
+          writeConcern: { w: 'majority' },
+        });
+
+        return res.status(201).json({
+          success: true,
+          message: 'Đặt vé và thanh toán thành công!',
+          data: savedBooking,
+        });
+      } catch (error) {
+        console.error('Booking transaction failed:', error);
+
+        if (error.code === 11000) {
+          return res.status(409).json({
+            success: false,
+            message:
+              'Ghế vừa được người khác đặt. Vui lòng chọn ghế khác.',
+          });
+        }
+
+        return res.status(error.statusCode || 500).json({
+          success: false,
+          message:
+            error.statusCode
+              ? error.message
+              : 'Không thể hoàn tất đặt vé. Giao dịch đã được hủy.',
+        });
+      } finally {
+        await session.endSession();
+      }
+    }
+
 
     // Chế độ dự phòng in-memory
     const memoryBooking = {
@@ -856,143 +1262,387 @@ app.post('/api/bookings', async (req, res) => {
   }
 });
 
-// ====================== CANCEL BOOKING & REFUND POINTS API ======================
-app.post('/api/bookings/:id/cancel', async (req, res) => {
+ // ====================== CANCEL BOOKING & REFUND POINTS API ======================
+
+async function cancelBookingHandler(req, res) {
+  const authorization = req.headers.authorization || '';
+
+  if (!authorization.startsWith('Bearer ')) {
+    return res.status(401).json({
+      success: false,
+      message: 'Vui lòng đăng nhập trước khi hủy vé.',
+    });
+  }
+
+  if (!process.env.JWT_SECRET) {
+    return res.status(503).json({
+      success: false,
+      message: 'Hệ thống xác thực chưa sẵn sàng.',
+    });
+  }
+
+  let decoded;
+
   try {
-    const bookingIdentifier = req.params.id;
+    decoded = jwt.verify(
+      authorization.slice(7).trim(),
+      process.env.JWT_SECRET
+    );
+  } catch (error) {
+    return res.status(401).json({
+      success: false,
+      message: 'Phiên đăng nhập không hợp lệ hoặc đã hết hạn.',
+    });
+  }
 
-    let booking = null;
-    if (mongoose.connection.readyState === 1) {
-      if (mongoose.Types.ObjectId.isValid(bookingIdentifier)) {
-        booking = await Booking.findById(bookingIdentifier).catch(() => null);
+  if (!decoded?.userId || !mongoose.isValidObjectId(decoded.userId)) {
+    return res.status(401).json({
+      success: false,
+      message: 'Thông tin tài khoản không hợp lệ.',
+    });
+  }
+
+  if (mongoose.connection.readyState !== 1) {
+    return res.status(503).json({
+      success: false,
+      message: 'Cơ sở dữ liệu chưa sẵn sàng.',
+    });
+  }
+
+  const bookingIdentifier = String(req.params.id || '').trim();
+
+  const bookingFilter = mongoose.isValidObjectId(bookingIdentifier)
+    ? {
+        $or: [
+          { _id: bookingIdentifier },
+          { bookingCode: bookingIdentifier },
+        ],
       }
+    : { bookingCode: bookingIdentifier };
+
+  const session = await mongoose.startSession();
+
+  try {
+    let cancelledBooking = null;
+
+    await session.withTransaction(async () => {
+      const booking = await Booking.findOne(bookingFilter)
+        .session(session);
+
       if (!booking) {
-        booking = await Booking.findOne({ bookingCode: bookingIdentifier });
+        const error = new Error('Không tìm thấy vé.');
+        error.statusCode = 404;
+        throw error;
       }
-      if (!booking) {
-        booking = await Booking.findById(bookingIdentifier).catch(() => null);
+
+      if (String(booking.userId || '') !== String(decoded.userId)) {
+        const error = new Error('Bạn không có quyền hủy vé này.');
+        error.statusCode = 403;
+        throw error;
       }
-    } else {
-      booking = memoryStore.bookings.find(
-        (b) => b.id === bookingIdentifier || b.bookingCode === bookingIdentifier
+
+      if (booking.status !== 'confirmed') {
+        const error = new Error(
+          'Vé không còn ở trạng thái có thể hủy.'
+        );
+        error.statusCode = 409;
+        throw error;
+      }
+
+      // Kiểm tra thời hạn hủy trước giờ chiếu hơn 30 phút.
+      const rawDate = String(booking.date || '').trim();
+      const rawTime = String(booking.time || '').trim();
+
+      let isoDate = rawDate;
+
+      if (/^\d{2}\.\d{2}\.\d{4}$/.test(rawDate)) {
+        const [day, month, year] = rawDate.split('.');
+        isoDate = `${year}-${month}-${day}`;
+      }
+
+      if (
+        !/^\d{4}-\d{2}-\d{2}$/.test(isoDate) ||
+        !/^([01]\d|2[0-3]):[0-5]\d$/.test(rawTime)
+      ) {
+        const error = new Error('Ngày hoặc giờ chiếu không hợp lệ.');
+        error.statusCode = 422;
+        throw error;
+      }
+
+      const showtime = new Date(`${isoDate}T${rawTime}:00+07:00`);
+
+      if (
+        Number.isNaN(showtime.getTime()) ||
+        showtime.toISOString().slice(0, 10) === ''
+      ) {
+        const error = new Error('Không xác định được thời gian chiếu.');
+        error.statusCode = 422;
+        throw error;
+      }
+
+      if (showtime.getTime() - Date.now() <= 30 * 60 * 1000) {
+        const error = new Error(
+          'Chỉ được hủy vé trước giờ chiếu hơn 30 phút.'
+        );
+        error.statusCode = 409;
+        throw error;
+      }
+
+      // Chỉ chuyển trạng thái nếu booking vẫn confirmed.
+      cancelledBooking = await Booking.findOneAndUpdate(
+        {
+          _id: booking._id,
+          userId: decoded.userId,
+          status: 'confirmed',
+        },
+        {
+          $set: {
+            status: 'cancelled',
+            refundStatus: 'Đã hủy và hoàn trả điểm',
+          },
+        },
+        {
+          new: true,
+          runValidators: true,
+          session,
+        }
       );
-    }
 
-    if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: 'Không tìm thấy thông tin đơn đặt vé.',
-      });
-    }
-
-    if (booking.status === 'cancelled') {
-      return res.status(400).json({
-        success: false,
-        message: 'Đơn đặt vé này đã được hủy trước đó.',
-      });
-    }
-
-    // Cập nhật trạng thái vé thành cancelled
-    booking.status = 'cancelled';
-    booking.refundStatus = 'Đã hủy và hoàn trả điểm';
-
-    if (mongoose.connection.readyState === 1) {
-      await booking.save();
+      if (!cancelledBooking) {
+        const error = new Error(
+          'Trạng thái vé đã thay đổi. Vui lòng tải lại.'
+        );
+        error.statusCode = 409;
+        throw error;
+      }
 
       const bUserId = booking.userId;
+      const pointsUsed = Number(booking.pointsUsed) || 0;
+      const pointsEarned = Number(booking.pointsEarned) || 0;
 
-      // 1. Hoàn lại số điểm đã sử dụng
-      if (booking.pointsUsed > 0 && bUserId) {
-        const u = await User.findByIdAndUpdate(
-          bUserId,
-          { $inc: { loyaltyPoints: booking.pointsUsed } },
-          { new: true }
-        );
+      // Hoàn điểm đã dùng và thu hồi điểm tích lũy.
+// Không cho phép số dư điểm âm; phần chưa thu hồi được ghi thành nợ.
+if (pointsUsed > 0 || pointsEarned > 0) {
+  if (
+    !Number.isSafeInteger(pointsUsed) ||
+    !Number.isSafeInteger(pointsEarned) ||
+    pointsUsed < 0 ||
+    pointsEarned < 0
+  ) {
+    const error = new Error('Dữ liệu điểm của booking không hợp lệ.');
+    error.statusCode = 422;
+    throw error;
+  }
 
-        await PointTransaction.create({
-          userId: bUserId,
-          bookingId: booking._id,
-          bookingCode: booking.bookingCode,
-          type: 'REFUND',
-          points: booking.pointsUsed,
-          balanceAfter: u ? u.loyaltyPoints : 0,
-          description: `Hoàn ${booking.pointsUsed} điểm do hủy vé ${booking.bookingCode}`,
-        });
-      }
+  const user = await User.findById(bUserId).session(session);
 
-      // 2. Thu hồi số điểm đã tích lũy từ đơn này
-      if (booking.pointsEarned > 0 && bUserId) {
-        const u = await User.findByIdAndUpdate(
-          bUserId,
-          { $inc: { loyaltyPoints: -booking.pointsEarned } },
-          { new: true }
-        );
+  if (!user) {
+    throw new Error('Không tìm thấy tài khoản để hoàn điểm.');
+  }
 
-        await PointTransaction.create({
-          userId: bUserId,
-          bookingId: booking._id,
-          bookingCode: booking.bookingCode,
-          type: 'REFUND',
-          points: -booking.pointsEarned,
-          balanceAfter: u ? Math.max(0, u.loyaltyPoints) : 0,
-          description: `Thu hồi ${booking.pointsEarned} điểm tích lũy do hủy vé ${booking.bookingCode}`,
-        });
-      }
+  const currentPoints = Number(user.loyaltyPoints);
+  const currentDebt = Number(user.loyaltyPointsDebt ?? 0);
 
-      // 3. Hoàn lại lượt sử dụng voucher
+  if (
+    !Number.isSafeInteger(currentPoints) ||
+    !Number.isSafeInteger(currentDebt) ||
+    currentPoints < 0 ||
+    currentDebt < 0
+  ) {
+    throw new Error('Số dư điểm của tài khoản không hợp lệ.');
+  }
+
+  // Điểm được hoàn trước hết dùng để thanh toán nợ điểm cũ.
+  const debtPaid = Math.min(pointsUsed, currentDebt);
+  const pointsRefundedToBalance = pointsUsed - debtPaid;
+
+  const balanceAfterRefund = currentPoints + pointsRefundedToBalance;
+  const debtAfterRefund = currentDebt - debtPaid;
+
+  // Thu hồi điểm từng được cộng từ booking đang hủy.
+  const pointsReclaimed = Math.min(
+    pointsEarned,
+    balanceAfterRefund
+  );
+
+  const pointsAddedToDebt = pointsEarned - pointsReclaimed;
+
+  const finalPoints = balanceAfterRefund - pointsReclaimed;
+  const finalDebt = debtAfterRefund + pointsAddedToDebt;
+
+  if (
+    !Number.isSafeInteger(finalPoints) ||
+    !Number.isSafeInteger(finalDebt)
+  ) {
+    throw new Error('Kết quả tính điểm vượt giới hạn an toàn.');
+  }
+
+  // Cập nhật điểm và nợ trong cùng transaction.
+  // Điều kiện số dư giúp phát hiện thay đổi ngoài dự kiến.
+  const updatedUser = await User.findOneAndUpdate(
+    {
+      _id: bUserId,
+      loyaltyPoints: currentPoints,
+      loyaltyPointsDebt: currentDebt,
+    },
+    {
+      $set: {
+        loyaltyPoints: finalPoints,
+        loyaltyPointsDebt: finalDebt,
+      },
+    },
+    {
+      new: true,
+      runValidators: true,
+      session,
+    }
+  );
+
+  if (!updatedUser) {
+    const error = new Error(
+      'Số dư điểm đã thay đổi. Vui lòng thử lại.'
+    );
+    error.statusCode = 409;
+    throw error;
+  }
+
+  if (pointsUsed > 0) {
+    await PointTransaction.create(
+      [{
+        userId: bUserId,
+        bookingId: booking._id,
+        bookingCode: booking.bookingCode,
+        type: 'REFUND',
+        points: pointsRefundedToBalance,
+        balanceAfter: balanceAfterRefund,
+        description:
+          `Hoàn ${pointsUsed} điểm do hủy vé ${booking.bookingCode}. ` +
+          `Bù nợ ${debtPaid} điểm.`,
+      }],
+      { session }
+    );
+  }
+
+  if (pointsEarned > 0) {
+    await PointTransaction.create(
+      [{
+        userId: bUserId,
+        bookingId: booking._id,
+        bookingCode: booking.bookingCode,
+        type: 'REFUND',
+        points: -pointsReclaimed,
+        balanceAfter: finalPoints,
+        description:
+          `Thu hồi ${pointsEarned} điểm tích lũy do hủy vé ` +
+          `${booking.bookingCode}. ` +
+          `Ghi nợ ${pointsAddedToDebt} điểm.`,
+      }],
+      { session }
+    );
+  }
+}
+
+      // Hoàn lượt sử dụng voucher.
       if (booking.voucherId) {
-        await Voucher.findByIdAndUpdate(booking.voucherId, {
-          $inc: { usedCount: -1 },
-        });
+        const updatedVoucher = await Voucher.findOneAndUpdate(
+          {
+            _id: booking.voucherId,
+            usedCount: { $gt: 0 },
+          },
+          {
+            $inc: { usedCount: -1 },
+          },
+          {
+            new: true,
+            session,
+          }
+        );
 
-        if (bUserId) {
-          await UserVoucher.findOneAndUpdate(
-            { userId: bUserId, voucherId: booking.voucherId, orderId: booking.bookingCode },
-            { $set: { status: 'AVAILABLE', usedAt: null, orderId: null } }
+        if (!updatedVoucher) {
+          throw new Error(
+            'Không thể hoàn lượt sử dụng voucher.'
           );
         }
-      }
-    } else {
-      if (booking.pointsUsed > 0) {
-        app.locals.mockUserPoints =
-          (app.locals.mockUserPoints !== undefined ? app.locals.mockUserPoints : 120) + booking.pointsUsed;
-      }
-      if (booking.pointsEarned > 0) {
-        app.locals.mockUserPoints = Math.max(
-          0,
-          (app.locals.mockUserPoints !== undefined ? app.locals.mockUserPoints : 120) - booking.pointsEarned
-        );
-      }
-      if (booking.voucherCode) {
-        const { sampleVouchers } = require('./seedVouchers');
-        const v = sampleVouchers.find((x) => x.code === booking.voucherCode);
-        if (v && v.usedCount > 0) v.usedCount -= 1;
-      }
-    }
 
-    // Giải phóng ghế
-    releaseSeats({
-      cinemaName: booking.cinemaName,
-      room: booking.room,
-      date: booking.date,
-      time: booking.time,
-      seats: booking.seats,
-      initialLayout: INITIAL_SEAT_LAYOUT,
+        const restoredUserVoucher = await UserVoucher.findOneAndUpdate(
+  {
+    userId: bUserId,
+    voucherId: booking.voucherId,
+    orderId: booking.bookingCode,
+    status: 'USED',
+  },
+  {
+    $set: {
+      status: 'AVAILABLE',
+      usedAt: null,
+      orderId: null,
+    },
+  },
+  {
+    new: true,
+    runValidators: true,
+    session,
+  }
+);
+
+if (!restoredUserVoucher) {
+  const error = new Error(
+    'Không tìm thấy voucher đã sử dụng để hoàn trả.'
+  );
+  error.statusCode = 409;
+  throw error;
+}
+      }
+
+
+      // Giải phóng khóa ghế thuộc chính booking này.
+      await SeatReservation.deleteMany(
+        { bookingId: booking._id },
+        { session }
+      );
+    }, {
+      readConcern: { level: 'snapshot' },
+      writeConcern: { w: 'majority' },
     });
+
+    // Chỉ cập nhật sơ đồ ghế trong RAM sau khi commit.
+    // MongoDB vẫn là nguồn dữ liệu chính.
+    try {
+      releaseSeats({
+        cinemaName: cancelledBooking.cinemaName,
+        room: cancelledBooking.room,
+        date: cancelledBooking.date,
+        time: cancelledBooking.time,
+        seats: cancelledBooking.seats,
+        initialLayout: INITIAL_SEAT_LAYOUT,
+      });
+    } catch (error) {
+      console.warn('Không thể đồng bộ trạng thái ghế RAM:', error.message);
+    }
 
     return res.json({
       success: true,
       message: 'Hủy vé và xử lý hoàn điểm thành công.',
-      data: booking,
+      data: cancelledBooking,
     });
   } catch (error) {
-    console.error('Lỗi hủy vé:', error.message);
-    return res.status(500).json({
+    console.error('Cancel transaction failed:', error);
+
+    return res.status(error.statusCode || 500).json({
       success: false,
-      message: 'Lỗi máy chủ khi xử lý hủy vé.',
+      message: error.statusCode
+        ? error.message
+        : 'Không thể hoàn tất hủy vé. Giao dịch đã được rollback.',
     });
+    } finally {
+    await session.endSession();
   }
-});
+}
+
+app.route('/api/bookings/:id/cancel')
+  .post(cancelBookingHandler)
+  .patch(cancelBookingHandler);
+
 
 // ====================== ERROR HANDLER ======================
 
