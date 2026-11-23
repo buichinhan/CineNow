@@ -3,12 +3,14 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 
 const Movie = require('./models/Movie');
 const Cinema = require('./models/Cinema');
 
 const Booking = require('./models/Booking');
 const SeatReservation = require('./models/SeatReservation');
+const PaymentIntent = require('./models/PaymentIntent');
 const User = require('./models/User');
 
 const Voucher = require('./models/Voucher');
@@ -26,6 +28,9 @@ const adminRoutes = require('./routes/admin');
 // Router từ nhánh feature/manhtoan
 const voucherRoutes = require('./routes/voucherRoutes');
 const loyaltyRoutes = require('./routes/loyaltyRoutes');
+const sepayPaymentRoutes = require('./routes/sepayPayments');
+const { persistBookingData } = require('./services/bookingPersistence');
+const { buildSePayQrUrl } = require('./services/sepayPaymentService');
 
 const {
   INITIAL_MOVIES,
@@ -48,7 +53,11 @@ const PORT = process.env.PORT || 3000;
 const MONGODB_URI = process.env.MONGODB_URI;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({
+  verify(req, res, buffer) {
+    req.rawBody = Buffer.from(buffer);
+  },
+}));
 
 // ====================== DATABASE STATUS ======================
 
@@ -162,6 +171,7 @@ app.use('/api/admin', adminRoutes);
 // ====================== VOUCHER & LOYALTY ROUTES ======================
 app.use('/api/vouchers', voucherRoutes);
 app.use('/api/loyalty', loyaltyRoutes);
+app.use('/api/payments/sepay', sepayPaymentRoutes);
 
 // ====================== HOME API ======================
 
@@ -254,6 +264,11 @@ async function getBookedSeatsForScreening({ cinemaName, room, date, time }) {
   // Đọc những ghế đã được khóa bằng unique index.
   const reservations = await SeatReservation.find({
     screeningKey,
+    $or: [
+      { expiresAt: { $exists: false } },
+      { expiresAt: null },
+      { expiresAt: { $gt: new Date() } },
+    ],
   })
     .select('seatId')
     .lean();
@@ -935,27 +950,43 @@ concessions: verifiedConcessions,
       createdAt: new Date().toISOString(),
     };
 
+    if (paymentMethod === 'SePay QR' && finalTotalPrice > 0) {
+      const reference =
+        `CN${crypto.randomBytes(6).toString('hex').toUpperCase()}`;
+      const bookingId = new mongoose.Types.ObjectId();
+      const paymentIntentId = new mongoose.Types.ObjectId();
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+      const bookingData = {
+        ...newBookingData,
+        _id: bookingId,
+        bookingCode: reference,
+        paymentMethod: 'SePay QR',
+      };
+      let qrUrl;
 
-    // 6. LƯU BOOKING, KHÓA GHẾ, ĐIỂM VÀ VOUCHER TRONG TRANSACTION
-    if (mongoose.connection.readyState === 1) {
+      try {
+        qrUrl = buildSePayQrUrl({
+          amount: finalTotalPrice,
+          reference,
+        });
+      } catch (error) {
+        return res.status(error.statusCode || 500).json({
+          success: false,
+          message: error.message,
+        });
+      }
+
       const { getScreeningKey } = require('./services/seatHoldService');
-
       const screeningKey = getScreeningKey({
         cinemaName,
         room,
         date,
         time,
       });
-
       const session = await mongoose.startSession();
-      let savedBooking;
 
       try {
         await session.withTransaction(async () => {
-          // Không dùng dữ liệu mock khi thực hiện giao dịch thật.
-          const bookingId = new mongoose.Types.ObjectId();
-
-          // Kiểm tra cả booking lịch sử chưa có SeatReservation.
           const legacyBookings = await Booking.find({
             cinemaName,
             room,
@@ -966,9 +997,7 @@ concessions: verifiedConcessions,
             .select('seats')
             .session(session)
             .lean();
-
           const requestedSeatSet = new Set(normalizedSeats);
-
           const legacyConflict = legacyBookings.some((existing) =>
             (existing.seats || []).some((seat) =>
               requestedSeatSet.has(
@@ -985,214 +1014,106 @@ concessions: verifiedConcessions,
             throw error;
           }
 
-          // Unique index đảm bảo chỉ một booking sở hữu
-          // một ghế trong cùng suất chiếu.
+          await SeatReservation.deleteMany(
+            {
+              screeningKey,
+              seatId: { $in: normalizedSeats },
+              expiresAt: { $lte: new Date() },
+            },
+            { session }
+          );
+
+          const activeReservations = await SeatReservation.find({
+            screeningKey,
+            seatId: { $in: normalizedSeats },
+            $or: [
+              { expiresAt: { $exists: false } },
+              { expiresAt: null },
+              { expiresAt: { $gt: new Date() } },
+            ],
+          })
+            .session(session)
+            .lean();
+
+          if (activeReservations.length > 0) {
+            const error = new Error(
+              'Một hoặc nhiều ghế đang được giữ hoặc đã đặt.'
+            );
+            error.statusCode = 409;
+            throw error;
+          }
+
           await SeatReservation.insertMany(
             normalizedSeats.map((seatId) => ({
               screeningKey,
               seatId,
               bookingId,
+              expiresAt,
             })),
-            {
-              session,
-              ordered: true,
-            }
+            { session, ordered: true }
           );
 
-          const bookingDocument = new Booking({
-            ...newBookingData,
-            _id: bookingId,
+          await PaymentIntent.create(
+            [{
+              _id: paymentIntentId,
+              userId: effectiveUserId,
+              reference,
+              amount: finalTotalPrice,
+              bookingId,
+              bookingData,
+              expiresAt,
+            }],
+            { session }
+          );
+        }, {
+          readConcern: { level: 'snapshot' },
+          writeConcern: { w: 'majority' },
+        });
+
+        return res.status(201).json({
+          success: true,
+          message: 'Đã tạo QR. Vé sẽ được xác nhận sau khi SePay báo nhận tiền.',
+          data: {
+            paymentIntentId: String(paymentIntentId),
+            reference,
+            amount: finalTotalPrice,
+            qrUrl,
+            expiresAt,
+            status: 'pending',
+          },
+        });
+      } catch (error) {
+        console.error('Failed to create SePay payment intent:', error.message);
+        if (error.code === 11000 || error.statusCode === 409) {
+          return res.status(409).json({
+            success: false,
+            message:
+              error.statusCode === 409
+                ? error.message
+                : 'Ghế vừa được người khác giữ hoặc đặt. Vui lòng chọn ghế khác.',
           });
+        }
 
-          savedBooking = await bookingDocument.save({ session });
-
-          // Trừ điểm có điều kiện để không vượt số dư.
-          if (pointsActuallyUsed > 0) {
-            const updatedUser = await User.findOneAndUpdate(
-              {
-                _id: effectiveUserId,
-                loyaltyPoints: { $gte: pointsActuallyUsed },
-              },
-              {
-                $inc: {
-                  loyaltyPoints: -pointsActuallyUsed,
-                },
-              },
-              {
-                new: true,
-                session,
-              }
-            );
-
-            if (!updatedUser) {
-              const error = new Error(
-                'Số dư điểm không đủ để hoàn tất đặt vé.'
-              );
-              error.statusCode = 409;
-              throw error;
-            }
-
-            await PointTransaction.create(
-              [{
-                userId: effectiveUserId,
-                bookingId,
-                bookingCode,
-                type: 'REDEEM',
-                points: -pointsActuallyUsed,
-                balanceAfter: updatedUser.loyaltyPoints,
-                description:
-                  `Sử dụng điểm cho đơn đặt vé ${bookingCode}`,
-              }],
-              { session }
-            );
-          }
-// Cộng điểm sau khi lưu booking.
-// Ưu tiên thanh toán nợ điểm trước khi cộng vào số dư.
-if (pointsEarned > 0) {
-  if (!Number.isSafeInteger(pointsEarned) || pointsEarned < 0) {
-    throw new Error('Số điểm tích lũy không hợp lệ.');
-  }
-
-  const user = await User.findById(effectiveUserId)
-    .session(session);
-
-  if (!user) {
-    throw new Error(
-      'Không tìm thấy người dùng để tích điểm.'
-    );
-  }
-
-  const currentPoints = Number(user.loyaltyPoints);
-  const currentDebt = Number(user.loyaltyPointsDebt ?? 0);
-
-  if (
-    !Number.isSafeInteger(currentPoints) ||
-    !Number.isSafeInteger(currentDebt) ||
-    currentPoints < 0 ||
-    currentDebt < 0
-  ) {
-    throw new Error('Dữ liệu điểm của tài khoản không hợp lệ.');
-  }
-
-  // Số điểm thưởng được dùng để trả nợ.
-  const debtPaid = Math.min(pointsEarned, currentDebt);
-
-  // Số điểm thực sự cộng vào số dư.
-  const pointsAdded = pointsEarned - debtPaid;
-
-  const finalPoints = currentPoints + pointsAdded;
-  const finalDebt = currentDebt - debtPaid;
-
-  if (
-    !Number.isSafeInteger(finalPoints) ||
-    !Number.isSafeInteger(finalDebt)
-  ) {
-    throw new Error('Kết quả tính điểm vượt giới hạn an toàn.');
-  }
-
-  const updatedUser = await User.findOneAndUpdate(
-    {
-      _id: effectiveUserId,
-      loyaltyPoints: currentPoints,
-      loyaltyPointsDebt: currentDebt,
-    },
-    {
-      $set: {
-        loyaltyPoints: finalPoints,
-        loyaltyPointsDebt: finalDebt,
-      },
-    },
-    {
-      new: true,
-      runValidators: true,
-      session,
+        return res.status(500).json({
+          success: false,
+          message: 'Không thể tạo yêu cầu thanh toán SePay.',
+        });
+      } finally {
+        await session.endSession();
+      }
     }
-  );
 
-  if (!updatedUser) {
-    const error = new Error(
-      'Số dư điểm đã thay đổi. Vui lòng thử lại.'
-    );
-    error.statusCode = 409;
-    throw error;
-  }
+    // 6. Persist the booking and related account changes atomically.
+    if (mongoose.connection.readyState === 1) {
+      const session = await mongoose.startSession();
+      let savedBooking;
 
-  await PointTransaction.create(
-    [{
-      userId: effectiveUserId,
-      bookingId,
-      bookingCode,
-      type: 'EARN',
-      points: pointsAdded,
-      balanceAfter: finalPoints,
-      description:
-        `Tích lũy ${pointsEarned} điểm từ đơn đặt vé ${bookingCode}. ` +
-        `Đã dùng ${debtPaid} điểm để thanh toán nợ.`,
-    }],
-    { session }
-  );
-}
-          if (voucher) {
-            // Giới hạn lượt dùng voucher ngay trong transaction.
-            const voucherFilter = {
-              _id: voucher._id,
-              isActive: true,
-              endDate: { $gte: new Date() },
-            };
-
-            if (voucher.totalLimit > 0) {
-              voucherFilter.usedCount = {
-                $lt: voucher.totalLimit,
-              };
-            }
-
-            const updatedVoucher = await Voucher.findOneAndUpdate(
-              voucherFilter,
-              {
-                $inc: { usedCount: 1 },
-              },
-              {
-                new: true,
-                session,
-              }
-            );
-
-            if (!updatedVoucher) {
-              const error = new Error(
-                'Voucher đã hết lượt hoặc không còn hiệu lực.'
-              );
-              error.statusCode = 409;
-              throw error;
-            }
-
-    const usedUserVoucher = await UserVoucher.findOneAndUpdate(
-  {
-    userId: effectiveUserId,
-    voucherId: voucher._id,
-    status: 'AVAILABLE',
-  },
-  {
-    $set: {
-      status: 'USED',
-      usedAt: new Date(),
-      orderId: bookingCode,
-    },
-  },
-  {
-    new: true,
-    runValidators: true,
-    session,
-  }
-);
-
-if (!usedUserVoucher) {
-  const error = new Error(
-    'Voucher không thuộc tài khoản hoặc đã được sử dụng.'
-  );
-  error.statusCode = 409;
-  throw error;
-}
-          }
+      try {
+        await session.withTransaction(async () => {
+          savedBooking = await persistBookingData(
+            newBookingData,
+            session
+          );
         }, {
           readConcern: { level: 'snapshot' },
           writeConcern: { w: 'majority' },
