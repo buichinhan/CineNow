@@ -138,6 +138,66 @@ export default function BookingCheckoutDemoScreen({
 
   // Trạng thái xác nhận thanh toán
   const [submittingPayment, setSubmittingPayment] = useState(false);
+  const [paymentIntent, setPaymentIntent] = useState(null);
+  const [paymentStatus, setPaymentStatus] = useState('pending');
+  const [showQrModal, setShowQrModal] = useState(false);
+
+  useEffect(() => {
+    const paymentIntentId = paymentIntent?.paymentIntentId;
+    if (!paymentIntentId || !token) return undefined;
+
+    let active = true;
+    let checking = false;
+    let interval;
+
+    const checkPaymentStatus = async () => {
+      if (checking) return;
+      checking = true;
+      try {
+        const res = await fetch(
+          `${API_BASE_URL}/payments/sepay/${paymentIntentId}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+        const json = await res.json();
+        if (!active || !res.ok || !json.success) return;
+
+        const status = json.data?.status;
+        setPaymentStatus(status || 'pending');
+        if (status === 'paid' && json.data?.booking) {
+          clearInterval(interval);
+          setShowQrModal(false);
+          setPaymentIntent(null);
+          Alert.alert(
+            'Thanh toán thành công! 🎬🎉',
+            `Mã vé: ${json.data.booking.bookingCode}\n` +
+              `Phim: ${json.data.booking.movieTitle}\n` +
+              `Ghế: ${(json.data.booking.seats || []).join(', ')}`
+          );
+          if (onComplete) onComplete(json.data.booking);
+        } else if (status === 'expired' || status === 'needs_review') {
+          clearInterval(interval);
+        }
+      } catch (error) {
+        if (active) {
+          console.warn('Không kiểm tra được trạng thái SePay:', error.message);
+        }
+      } finally {
+        checking = false;
+      }
+    };
+
+    interval = setInterval(checkPaymentStatus, 3000);
+    checkPaymentStatus();
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [paymentIntent?.paymentIntentId, token, onComplete]);
 
   // Tải thông tin số dư điểm từ Backend
   useEffect(() => {
@@ -339,7 +399,7 @@ export default function BookingCheckoutDemoScreen({
         concessionsTotal: comboSubtotal,
         voucherCode: appliedVoucher ? appliedVoucher.code : undefined,
         pointsToUse: pointsToUse > 0 ? pointsToUse : 0,
-        paymentMethod: 'CinePay / Thẻ ngân hàng / Ví MoMo',
+        paymentMethod: 'SePay QR',
         holdToken: bookingData?.holdToken,
       };
 
@@ -362,6 +422,13 @@ if (!token) {
       const json = await res.json();
 
       if (res.ok && json.success) {
+        if (json.data?.paymentIntentId && json.data?.qrUrl) {
+          setPaymentIntent(json.data);
+          setPaymentStatus('pending');
+          setShowQrModal(true);
+          return;
+        }
+
         const booking = json.data;
 const bookingCode = booking?.bookingCode;
 
@@ -756,20 +823,80 @@ if (onComplete) {
               styles.checkoutBtn,
               submittingPayment && styles.checkoutBtnDisabled,
             ]}
-            onPress={handleConfirmPayment}
-            disabled={submittingPayment}
+            onPress={
+              paymentIntent
+                ? paymentStatus === 'expired'
+                  ? () => {
+                      setPaymentIntent(null);
+                      setPaymentStatus('pending');
+                      handleConfirmPayment();
+                    }
+                  : () => setShowQrModal(true)
+                : handleConfirmPayment
+            }
+            disabled={
+              submittingPayment || paymentStatus === 'needs_review'
+            }
             activeOpacity={0.85}
           >
             {submittingPayment ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
               <Text style={styles.checkoutBtnText}>
-                XÁC NHẬN THANH TOÁN ({finalTotal.toLocaleString('vi-VN')}đ)
+                {paymentIntent
+                  ? paymentStatus === 'expired'
+                    ? 'TẠO QR MỚI'
+                    : paymentStatus === 'needs_review'
+                    ? 'LIÊN HỆ HỖ TRỢ'
+                    : 'HIỆN LẠI MÃ QR'
+                  : `TẠO QR VÀ THANH TOÁN (${finalTotal.toLocaleString('vi-VN')}đ)`}
               </Text>
             )}
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      <Modal
+        visible={showQrModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowQrModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.qrModalContent}>
+            <Text style={styles.qrModalTitle}>Thanh toán bằng SePay</Text>
+            {paymentStatus === 'pending' && paymentIntent?.qrUrl ? (
+              <Image
+                source={{ uri: paymentIntent.qrUrl }}
+                style={styles.qrImage}
+                resizeMode="contain"
+              />
+            ) : paymentStatus === 'pending' ? (
+              <ActivityIndicator size="large" color="#E50914" />
+            ) : null}
+            <Text style={styles.qrAmount}>
+              {(paymentIntent?.amount || 0).toLocaleString('vi-VN')}đ
+            </Text>
+            <Text style={styles.qrReference}>
+              Nội dung chuyển khoản: {paymentIntent?.reference}
+            </Text>
+            <Text style={styles.qrStatus}>
+              {paymentStatus === 'pending'
+                ? 'Đang chờ SePay xác nhận. App sẽ tự kiểm tra trạng thái; không chuyển tiền nếu QR hết hạn.'
+                : paymentStatus === 'expired'
+                ? 'QR đã hết hạn. Không chuyển tiền bằng mã này.'
+                : 'Giao dịch cần được kiểm tra thủ công. Vui lòng không chuyển thêm tiền.'}
+            </Text>
+            <TouchableOpacity
+              style={styles.qrCloseButton}
+              onPress={() => setShowQrModal(false)}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.checkoutBtnText}>ẨN MÃ QR</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* MODAL CHỌN VOUCHER TỪ DANH SÁCH KHẢ DỤNG */}
       <Modal
@@ -1334,6 +1461,54 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 15,
     letterSpacing: 0.5,
+  },
+  qrModalContent: {
+    backgroundColor: '#181818',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    alignItems: 'center',
+  },
+  qrModalTitle: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 16,
+  },
+  qrImage: {
+    width: 250,
+    height: 250,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  qrAmount: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  qrReference: {
+    color: '#FACC15',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  qrStatus: {
+    color: '#D4D4D8',
+    fontSize: 13,
+    lineHeight: 20,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  qrCloseButton: {
+    backgroundColor: '#3F3F46',
+    height: 48,
+    borderRadius: 12,
+    alignSelf: 'stretch',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   modalOverlay: {
     flex: 1,

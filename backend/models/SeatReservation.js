@@ -18,6 +18,10 @@ const seatReservationSchema = new mongoose.Schema(
       ref: 'Booking',
       required: true,
     },
+    expiresAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,
@@ -28,6 +32,10 @@ const seatReservationSchema = new mongoose.Schema(
 seatReservationSchema.index(
   { screeningKey: 1, seatId: 1 },
   { unique: true }
+);
+seatReservationSchema.index(
+  { expiresAt: 1 },
+  { expireAfterSeconds: 0 }
 );
 
 module.exports = mongoose.model(
