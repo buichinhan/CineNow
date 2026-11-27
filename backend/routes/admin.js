@@ -834,4 +834,406 @@ router.delete("/vouchers/:id", async (req, res) => {
     });
   }
 });
+
+// =====================================================
+// ADMIN - CUSTOMER MANAGEMENT (READ ONLY)
+// =====================================================
+
+function parseCustomerPage(value, fallback, max) {
+  if (value === undefined) return fallback;
+
+  if (typeof value !== "string" || !/^[1-9]\d*$/.test(value)) {
+    return null;
+  }
+
+  const number = Number(value);
+
+  return Number.isSafeInteger(number) && number <= max
+    ? number
+    : null;
+}
+
+const customerFields =
+  "_id fullName email phone loyaltyPoints loyaltyPointsDebt createdAt";
+
+// GET /api/admin/customers
+router.get("/customers", async (req, res) => {
+  res.set("Cache-Control", "no-store");
+
+  try {
+    const page = parseCustomerPage(req.query.page, 1, 100000);
+    const limit = parseCustomerPage(req.query.limit, 10, 50);
+
+    if (page === null || limit === null) {
+      return res.status(400).json({
+        success: false,
+        message: "Thông số phân trang không hợp lệ."
+      });
+    }
+
+    const rawSearch = req.query.search ?? "";
+    const status = req.query.status ?? "all";
+
+    if (
+      typeof rawSearch !== "string" ||
+      rawSearch.length > 100
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Từ khóa tìm kiếm không hợp lệ."
+      });
+    }
+
+    if (
+      typeof status !== "string" ||
+      !["all", "active", "locked"].includes(status)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Bộ lọc trạng thái không hợp lệ."
+      });
+    }
+
+    const search = rawSearch.trim();
+
+    const now = new Date();
+
+    const monthStart = new Date(
+      `${getVNDate(now).slice(0, 7)}-01T00:00:00+07:00`
+    );
+
+    const roleFilter = {
+      $expr: {
+        $or: [
+          { $eq: ["$role", "customer"] },
+          { $eq: [{ $type: "$role" }, "missing"] }
+        ]
+      }
+    };
+
+    const validVersion = {
+      $switch: {
+        branches: [
+          {
+            case: {
+              $eq: [{ $type: "$tokenVersion" }, "missing"]
+            },
+            then: true
+          },
+          {
+            case: {
+              $in: [
+                { $type: "$tokenVersion" },
+                ["int", "long", "double"]
+              ]
+            },
+            then: {
+              $and: [
+                { $gte: ["$tokenVersion", 0] },
+                {
+                  $lte: [
+                    "$tokenVersion",
+                    Number.MAX_SAFE_INTEGER
+                  ]
+                },
+                {
+                  $eq: [
+                    "$tokenVersion",
+                    { $trunc: "$tokenVersion" }
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        default: false
+      }
+    };
+
+    const accountStatus = {
+      $cond: [
+        validVersion,
+        {
+          $switch: {
+            branches: [
+              {
+                case: {
+                  $eq: [{ $type: "$isLocked" }, "missing"]
+                },
+                then: "active"
+              },
+              {
+                case: {
+                  $eq: [{ $type: "$isLocked" }, "bool"]
+                },
+                then: {
+                  $cond: ["$isLocked", "locked", "active"]
+                }
+              }
+            ],
+            default: "invalid"
+          }
+        },
+        "invalid"
+      ]
+    };
+
+    const conditions = [];
+
+    if (search) {
+      const escaped = search.replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&"
+      );
+
+      conditions.push({
+        $or: [
+          { fullName: { $regex: escaped, $options: "i" } },
+          { email: { $regex: escaped, $options: "i" } },
+          { phone: { $regex: escaped, $options: "i" } }
+        ]
+      });
+    }
+
+    if (status !== "all") {
+      conditions.push({ accountStatus: status });
+    }
+
+    const filteredStages = conditions.length
+      ? [{ $match: { $and: conditions } }]
+      : [];
+
+    const [result] = await User.aggregate([
+      { $match: roleFilter },
+      {
+        $project: {
+          _id: 1,
+          fullName: 1,
+          email: 1,
+          phone: 1,
+          loyaltyPoints: 1,
+          loyaltyPointsDebt: 1,
+          createdAt: 1,
+          accountStatus
+        }
+      },
+      {
+        $facet: {
+          customers: [
+            ...filteredStages,
+            { $sort: { createdAt: -1, _id: -1 } },
+            { $skip: (page - 1) * limit },
+            { $limit: limit }
+          ],
+
+          filteredCount: [
+            ...filteredStages,
+            { $count: "total" }
+          ],
+
+          stats: [
+            {
+              $group: {
+                _id: null,
+
+                totalCustomers: { $sum: 1 },
+
+                newCustomers: {
+                  $sum: {
+                    $cond: [
+                      {
+                        $and: [
+                          {
+                            $eq: [
+                              { $type: "$createdAt" },
+                              "date"
+                            ]
+                          },
+                          { $gte: ["$createdAt", monthStart] },
+                          { $lte: ["$createdAt", now] }
+                        ]
+                      },
+                      1,
+                      0
+                    ]
+                  }
+                },
+
+                activeCustomers: {
+                  $sum: {
+                    $cond: [
+                      { $eq: ["$accountStatus", "active"] },
+                      1,
+                      0
+                    ]
+                  }
+                },
+
+                lockedCustomers: {
+                  $sum: {
+                    $cond: [
+                      { $eq: ["$accountStatus", "locked"] },
+                      1,
+                      0
+                    ]
+                  }
+                },
+
+                invalidCustomers: {
+                  $sum: {
+                    $cond: [
+                      { $eq: ["$accountStatus", "invalid"] },
+                      1,
+                      0
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    ]).read("primary").option({ maxTimeMS: 10000 });
+
+    const stats = result?.stats?.[0] ?? {};
+    const total = result?.filteredCount?.[0]?.total ?? 0;
+
+    return res.json({
+      success: true,
+
+      data: result?.customers ?? [],
+
+      stats: {
+        totalCustomers: stats.totalCustomers ?? 0,
+        newCustomers: stats.newCustomers ?? 0,
+        activeCustomers: stats.activeCustomers ?? 0,
+        lockedCustomers: stats.lockedCustomers ?? 0,
+        invalidCustomers: stats.invalidCustomers ?? 0
+      },
+
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit)
+      }
+    });
+  } catch (error) {
+    console.error("[ADMIN CUSTOMERS ERROR]", error.name);
+
+    return res.status(500).json({
+      success: false,
+      message: "Không thể tải danh sách khách hàng."
+    });
+  }
+});
+
+// GET /api/admin/customers/:id
+router.get("/customers/:id", async (req, res) => {
+  try {
+    res.set("Cache-Control", "no-store");
+
+    const id = req.params.id;
+
+    if (!/^[a-fA-F0-9]{24}$/.test(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "ID khách hàng không hợp lệ.",
+      });
+    }
+
+    const page = parseCustomerPage(req.query.page, 1, 100000);
+    const limit = parseCustomerPage(req.query.limit, 10, 50);
+
+    if (page === null || limit === null) {
+      return res.status(400).json({
+        success: false,
+        message: "Thông số phân trang không hợp lệ.",
+      });
+    }
+
+    const customer = await User.findOne({
+      _id: id,
+      $and: [{ $or: [{ role: "customer" }, { role: { $exists: false } }] }],
+    })
+      .select(customerFields)
+      .lean();
+
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy khách hàng.",
+      });
+    }
+
+    const filter = { userId: customer._id };
+
+    const [bookings, total, spending] = await Promise.all([
+      Booking.find(filter)
+        .select(
+          "bookingCode movieTitle cinemaName room date time seats totalPrice status paymentStatus createdAt"
+        )
+        .sort({ createdAt: -1, _id: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+
+      Booking.countDocuments(filter),
+
+      Booking.aggregate([
+        {
+          $match: {
+            ...filter,
+            status: "confirmed",
+            paymentStatus: "paid",
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            totalSpent: { $sum: "$totalPrice" },
+            paidBookings: { $sum: 1 },
+          },
+        },
+      ]),
+    ]);
+
+    return res.json({
+      success: true,
+      data: {
+        customer,
+        stats: {
+          totalBookings: total,
+          paidBookings: spending[0]?.paidBookings ?? 0,
+          totalSpent: spending[0]?.totalSpent ?? 0,
+        },
+        bookings,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      },
+    });
+  } catch (error) {
+    console.error("[ADMIN CUSTOMER DETAIL ERROR]", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Không thể tải thông tin khách hàng.",
+    });
+  }
+});
+
+
+// ==================== CUSTOMER POINTS ====================
+
+router.use(require("./adminCustomerPoints"));
+
+
+// ==================== CUSTOMER ACCOUNT STATUS ====================
+
+router.use(require("./adminCustomerStatus"));
+
 module.exports = router;
