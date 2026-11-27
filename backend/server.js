@@ -445,6 +445,28 @@ app.get('/api/concessions', (req, res) => {
 });
 
 // ====================== BOOKINGS API ======================
+const { assertDecodedAccess } = require('./services/accountAccess');
+
+async function checkBookingAccount(decoded, res) {
+  try {
+    await assertDecodedAccess(decoded);
+    return true;
+  } catch (error) {
+    const status = [401, 403, 503].includes(error.statusCode)
+      ? error.statusCode
+      : 503;
+
+    res.status(status).json({
+      success: false,
+      message: status === 503
+        ? 'He thong xac thuc tam thoi khong kha dung.'
+        : error.message,
+    });
+
+    return false;
+  }
+}
+
 app.get('/api/bookings', async (req, res) => {
   try {
     const authorization = req.headers.authorization || '';
@@ -468,7 +490,7 @@ app.get('/api/bookings', async (req, res) => {
     let decoded;
 
     try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET);
+      decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"] });
     } catch (error) {
       return res.status(401).json({
         success: false,
@@ -490,9 +512,13 @@ app.get('/api/bookings', async (req, res) => {
       });
     }
 
-const bookings = await Booking.find({
-  userId: decoded.userId,
-})
+    if (!(await checkBookingAccount(decoded, res))) {
+      return;
+    }
+
+    const bookings = await Booking.find({
+      userId: decoded.userId,
+    })
   .sort({ createdAt: -1 })
   .lean();
 
@@ -567,13 +593,20 @@ app.post('/api/bookings', async (req, res) => {
       });
     }
 
+    if (!process.env.JWT_SECRET) {
+      return res.status(503).json({
+        success: false,
+        message: 'He thong xac thuc chua san sang.',
+      });
+    }
+
     const token = authHeader.slice(7).trim();
     let decoded;
 
     try {
       decoded = jwt.verify(
         token,
-        process.env.JWT_SECRET || 'cinenow_secret_key_2026'
+        process.env.JWT_SECRET, { algorithms: ["HS256"] }
       );
     } catch (error) {
       return res.status(401).json({
@@ -587,6 +620,10 @@ app.post('/api/bookings', async (req, res) => {
         success: false,
         message: 'Token không chứa thông tin người dùng hợp lệ.',
       });
+    }
+
+    if (!(await checkBookingAccount(decoded, res))) {
+      return;
     }
 
     const effectiveUserId = decoded.userId;
@@ -1207,7 +1244,8 @@ async function cancelBookingHandler(req, res) {
   try {
     decoded = jwt.verify(
       authorization.slice(7).trim(),
-      process.env.JWT_SECRET
+      process.env.JWT_SECRET,
+      { algorithms: ["HS256"] }
     );
   } catch (error) {
     return res.status(401).json({
@@ -1228,6 +1266,10 @@ async function cancelBookingHandler(req, res) {
       success: false,
       message: 'Cơ sở dữ liệu chưa sẵn sàng.',
     });
+  }
+
+  if (!(await checkBookingAccount(decoded, res))) {
+    return;
   }
 
   const bookingIdentifier = String(req.params.id || '').trim();

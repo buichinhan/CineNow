@@ -43,6 +43,40 @@ loyaltyPointsDebt: {
 },
 
     // Phân quyền tài khoản CineNow
+    // Account access control
+    isLocked: {
+      type: Boolean,
+      default: false,
+    },
+
+    lockedAt: {
+      type: Date,
+      default: null,
+    },
+
+    lockedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
+    lockReason: {
+      type: String,
+      trim: true,
+      maxlength: 300,
+      default: null,
+    },
+
+    tokenVersion: {
+      type: Number,
+      default: 0,
+      min: 0,
+      validate: {
+        validator: Number.isSafeInteger,
+        message: "Invalid token version",
+      },
+    },
+
     role: {
       type: String,
       enum: ["customer", "admin"],

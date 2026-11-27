@@ -1,52 +1,100 @@
-const jwt = require('jsonwebtoken');
+const jwt = require("jsonwebtoken");
 
-const authMiddleware = (req, res, next) => {
-  const authHeader = req.headers.authorization;
+const {
+  assertDecodedAccess,
+} = require("../services/accountAccess");
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({
-      success: false,
-      message: 'Không tìm thấy token xác thực. Vui lòng đăng nhập.',
-    });
-  }
+function reject(res, status, message) {
+  return res.status(status).json({
+    success: false,
+    message,
+  });
+}
 
-  const token = authHeader.split(' ')[1];
+function createAuthMiddleware({ optional = false } = {}) {
+  return async function authenticate(req, res, next) {
+    const authorization = req.headers.authorization;
 
-  try {
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET || 'cinenow_secret_key_2026'
-    );
-    req.userId = decoded.userId;
-    next();
-  } catch (error) {
-    return res.status(401).json({
-      success: false,
-      message: 'Phiên đăng nhập đã hết hạn hoặc không hợp lệ.',
-    });
-  }
-};
+    if (authorization === undefined) {
+      if (optional) {
+        return next();
+      }
 
-const optionalAuthMiddleware = (req, res, next) => {
-  const authHeader = req.headers.authorization;
+      return reject(
+        res,
+        401,
+        "Không tìm thấy token xác thực. Vui lòng đăng nhập."
+      );
+    }
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const match =
+      typeof authorization === "string"
+        ? authorization.match(/^Bearer\s+(\S+)$/i)
+        : null;
+
+    if (!match) {
+      return reject(
+        res,
+        401,
+        "Token xác thực không hợp lệ."
+      );
+    }
+
+    if (!process.env.JWT_SECRET) {
+      return reject(
+        res,
+        503,
+        "Hệ thống xác thực tạm thời không khả dụng."
+      );
+    }
+
+    let decoded;
+
+    try {
+      decoded = jwt.verify(
+        match[1],
+        process.env.JWT_SECRET,
+        {
+          algorithms: ["HS256"],
+        }
+      );
+    } catch {
+      return reject(
+        res,
+        401,
+        "Phiên đăng nhập đã hết hạn hoặc không hợp lệ."
+      );
+    }
+
+    try {
+      const account = await assertDecodedAccess(decoded);
+
+      req.userId = String(account._id);
+    } catch (error) {
+      const status = [401, 403, 503].includes(
+        error.statusCode
+      )
+        ? error.statusCode
+        : 503;
+
+      return reject(
+        res,
+        status,
+        status === 503
+          ? "Hệ thống xác thực tạm thời không khả dụng."
+          : error.message
+      );
+    }
+
     return next();
-  }
+  };
+}
 
-  const token = authHeader.split(' ')[1];
+const authMiddleware = createAuthMiddleware();
 
-  try {
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET || 'cinenow_secret_key_2026'
-    );
-    req.userId = decoded.userId;
-  } catch (error) {
-    // Không bắt buộc lỗi nếu token không hợp lệ ở optional
-  }
-  next();
-};
+const optionalAuthMiddleware = createAuthMiddleware({
+  optional: true,
+});
 
 module.exports = {
   authMiddleware,

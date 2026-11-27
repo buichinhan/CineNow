@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 
 import {
   LayoutDashboard,
+  Users,
   Film,
   Building2,
   CalendarDays,
@@ -27,6 +28,7 @@ import Showtimes from "./pages/Showtimes";
 import Login from "./pages/Login";
 import Bookings from "./pages/Bookings";
 import Vouchers from "./pages/Vouchers";
+import Customers from "./pages/Customers";
 // ==================== API ====================
 
 import {
@@ -39,6 +41,11 @@ import {
 // ==================== SIDEBAR MENU ====================
 
 const menuItems = [
+  {
+    id: "customers",
+    name: "Quản lý khách hàng",
+    icon: Users,
+  },
   {
     id: "dashboard",
     name: "Tổng quan",
@@ -208,6 +215,9 @@ function App() {
 
       case "showtimes":
         return <Showtimes />;
+      case "customers":
+        return <Customers />;
+
       case "bookings":
         return <Bookings />;
           case "vouchers":

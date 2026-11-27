@@ -4,6 +4,11 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
+const {
+  loadAccount,
+  assertAccountActive,
+} = require('../services/accountAccess');
+
 // ĐĂNG KÝ
 router.post('/register', async (req, res) => {
   try {
@@ -116,10 +121,29 @@ router.post('/login', async (req, res) => {
       throw new Error('JWT_SECRET chưa được cấu hình.');
     }
 
+    let tokenVersion;
+
+    try {
+      const currentAccount = await loadAccount(String(user._id));
+
+      tokenVersion = assertAccountActive(currentAccount);
+    } catch (error) {
+      const status = [401, 403, 503].includes(error.statusCode)
+        ? error.statusCode
+        : 503;
+
+      return res.status(status).json({
+        success: false,
+        message: status === 503
+          ? 'He thong xac thuc tam thoi khong kha dung.'
+          : error.message,
+      });
+    }
+
     const token = jwt.sign(
-      { userId: user._id },
+      { userId: String(user._id), tokenVersion },
       process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+      { algorithm: 'HS256', expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
     );
 
     return res.json({

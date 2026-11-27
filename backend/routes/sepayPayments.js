@@ -1,6 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
-const jwt = require('jsonwebtoken');
+const { authMiddleware } = require('../middleware/auth');
 const Booking = require('../models/Booking');
 const PaymentIntent = require('../models/PaymentIntent');
 const SeatReservation = require('../models/SeatReservation');
@@ -10,6 +10,8 @@ const {
   readSePayTransfer,
 } = require('../services/sepayPaymentService');
 
+
+
 const router = express.Router();
 
 function releaseIntentSeats(intent, session) {
@@ -17,39 +19,20 @@ function releaseIntentSeats(intent, session) {
   return SeatReservation.deleteMany({ bookingId: intent.bookingId }, options);
 }
 
-router.get('/:id', async (req, res) => {
-  const authHeader = req.headers.authorization || '';
-  if (!authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({
+router.get('/:id', authMiddleware, async (req, res) => {
+  if (!/^[a-f0-9]{24}$/i.test(req.params.id)) {
+    return res.status(400).json({
       success: false,
-      message: 'Vui lòng đăng nhập để kiểm tra thanh toán.',
+      message: 'Invalid payment ID.',
     });
   }
 
-  let decoded;
-  try {
-    decoded = jwt.verify(
-      authHeader.slice(7).trim(),
-      process.env.JWT_SECRET || 'cinenow_secret_key_2026'
-    );
-  } catch (error) {
-    return res.status(401).json({
-      success: false,
-      message: 'Phiên đăng nhập không hợp lệ hoặc đã hết hạn.',
-    });
-  }
-
-  if (!decoded?.userId) {
-    return res.status(401).json({
-      success: false,
-      message: 'Token không chứa thông tin người dùng hợp lệ.',
-    });
-  }
+  res.set('Cache-Control', 'no-store');
 
   try {
     let intent = await PaymentIntent.findOne({
       _id: req.params.id,
-      userId: decoded.userId,
+      userId: req.userId,
     });
 
     if (!intent) {
